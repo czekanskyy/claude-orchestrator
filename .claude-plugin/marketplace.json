@@ -1,0 +1,14 @@
+{
+  "name": "czekanskyy-tools",
+  "owner": { "name": "Dominik Czekański" },
+  "metadata": { "description": "Private Claude Code plugins.", "version": "1.0.0" },
+  "plugins": [
+    {
+      "name": "orchestrator",
+      "description": "Orchestrator workflow: Claude subagents and Codex workers with cross-family review.",
+      "version": "1.0.0",
+      "author": { "name": "Dominik Czekański" },
+      "source": "./plugins/orchestrator"
+    }
+  ]
+}

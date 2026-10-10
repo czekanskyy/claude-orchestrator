@@ -1,0 +1,6 @@
+{
+  "name": "orchestrator",
+  "version": "1.0.0",
+  "description": "Orchestrator workflow: Claude subagents and Codex workers with cross-family review.",
+  "author": { "name": "Dominik Czekański" }
+}
