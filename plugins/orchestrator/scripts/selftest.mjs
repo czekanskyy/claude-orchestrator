@@ -634,6 +634,10 @@ function renderScenario() {
   const rep = run('report', '--run', init.dir, '--data', repFile, '--strict');
   check('render', 'report fills decisions, fallbacks, reviews, pools and commits from the ledger and git', rep.status === 0 && /Wybrano JWT/.test(rep.stdout) && /GPT → Claude \(limit\)/.test(rep.stdout) && /GPT → Claude: 1 znalezisko/.test(rep.stdout) && /Add feature/.test(rep.stdout) && !/base/.test(rep.stdout) && /\*\*Pule:\*\*/.test(rep.stdout), rep.stdout + rep.stderr);
   const lp = path.join(TMP, 'prompt.md'); fs.writeFileSync(lp, goodPrompt);
+  const save = spawnSync(process.execPath, [path.join(HERE, 'run.mjs'), 'save-prompt', '--run', init.dir], { input: goodPrompt, encoding: 'utf8', env: process.env });
+  check('render', 'save-prompt writes prompt.md from stdin and lints it', save.status === 0 && fs.readFileSync(path.join(init.dir, 'prompt.md'), 'utf8') === goodPrompt && JSON.parse(save.stdout).ok === true, save.stdout + save.stderr);
+  const badSave = spawnSync(process.execPath, [path.join(HERE, 'run.mjs'), 'save-prompt', '--run', init.dir], { input: '## Goal\nAs discussed.', encoding: 'utf8', env: process.env });
+  check('render', 'save-prompt reports lint problems (exit 1) so the agent can fix them', badSave.status === 1 && JSON.parse(badSave.stdout).problems.length > 0);
   check('render', 'run.mjs lint-prompt exit codes', run('lint-prompt', lp).status === 0 && run('lint-prompt', brief).status !== 0);
 }
 

@@ -18,6 +18,7 @@ const USAGE = `run.mjs <command>
   report --run DIR --data report.json [--strict]     final report (Polish, ≤ 35 lines); pools and commits auto-filled
   note --run DIR --kind decision|fallback TEXT         record a decision made on the user's behalf / a fallback (feeds the report)
   review --run DIR --by X --of Y [--high N --med N --low N --fixed N --rejected N --note T]   record one cross-review (feeds the report)
+  save-prompt --run DIR [--part N]                   read the prompt from stdin, write prompt.md (or part-N.md), lint it, print the verdict
   lint-prompt FILE [--part]                          prompt.md / split part: sections present and self-contained`;
 
 const ledgerFile = (dir) => path.join(dir, 'ledger.json');
@@ -123,6 +124,15 @@ async function main(argv) {
       process.stdout.write(`${r.text}\n`);
       if (r.over_cap) { process.stderr.write(`report is ${r.lines} lines, cap ${r.cap}: shorten the longest lists\n`); if (a.strict) process.exitCode = 1; }
       return;
+    }
+    case 'save-prompt': {
+      const l = need();
+      const part = a.part && a.part !== true ? Number(a.part) : null;
+      const file = path.join(l.dir, part ? `part-${part}.md` : 'prompt.md');
+      const text = fs.readFileSync(0, 'utf8');
+      fs.writeFileSync(file, text);
+      const r = lintPrompt(text, { part: !!part && part > 1 });
+      return out({ file, ...r }, r.ok ? 0 : 1);
     }
     case 'lint-prompt': {
       const r = lintPrompt(fs.readFileSync(a._[0], 'utf8'), { part: a.part });

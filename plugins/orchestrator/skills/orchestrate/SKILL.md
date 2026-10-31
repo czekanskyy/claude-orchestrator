@@ -11,16 +11,16 @@ Sources of truth: `P/models.yaml`, the user's `~/.claude/orchestrator/config.yam
 You plan, route, verify, integrate and commit; you do not type bulk code. Anything user-facing is **Polish**; everything else English.
 
 ## Silence policy (strict)
-The user hears from you ONLY in: (a) the assignment table, (b) status tables, (c) questions that need them, (d) errors and blockers, (e) the final report. No "calling agent X", no restated plans or triage, no recap of tool output, no explaining what you skipped. Tool output is invisible to the user: copy tables from `run.mjs` verbatim. Workers answer in ≤ 15 lines.
+The user hears from you ONLY in: (a) the assignment table, (b) status tables, (c) questions that need them, (d) errors and blockers, (e) the final report. No "calling agent X", no restated plans or triage, no recap of tool output, no explaining what you skipped, no "waiting for the worker" lines: a dispatch message carries no text besides its tool calls, and while workers run you write nothing. Tool output is invisible to the user: copy tables from `run.mjs` verbatim. Workers answer in ≤ 15 lines.
 
 ## 0. Preflight (once per session)
 `registry.mjs preflight --md`. Warnings count as (d), one line each: config missing → `/orchestrator:configure`; stale → `/orchestrator:update`; subscription mismatch or a nearly empty main pool → suggest switching accounts, never switch for them.
 **Which orchestrator** (only when the repo ships its own): `--use global|project` wins; else `orchestrator.choice`: `project` → invoke the project skill and stop; `global` → continue; `ask` → AskUserQuestion (save with `registry.mjs project-pref --orchestrator <choice>` if wanted). Running global there, the repo's own rules (branching, commits, checks, critical paths, definition of done) still win.
 
 ## 1. Triage and path
-`triage.mjs --text "<request>" --run <slug>` → `class`, `confidence`, `sensitivity`, `critical`, `risk_hint`, and `run.dir` = `D` (the run directory and ledger). Accept the class unless confidence is `low` or you know better (rubric: `P/routing.md` §1). Every path, also one you do yourself, ends with the report (§7).
+`triage.mjs --text "<the user's request, VERBATIM>" --run <slug>` (never condense it: the signals live in the wording) → `class`, `confidence`, `sensitivity`, `critical`, `risk_hint`, and `run.dir` = `D` (the run directory and ledger). Accept the class unless confidence is `low` or you know better (an explicit open design choice or a request for clarification means complex) (rubric: `P/routing.md` §1). Every path, also one you do yourself, ends with the report (§7).
 - **simple** → plan inline (§2).
-- **complex** → route a `spec` task (`family: claude`) and dispatch `orchestrator:prompt-creator` (`P/routing.md` §10). It returns `questions[]` → ask them in ONE AskUserQuestion → resume the SAME agent with SendMessage (≤ 3 rounds). On `ready`: `run.mjs lint-prompt D/prompt.md`; then continue as simple with `D/prompt.md` as the source of every brief.
+- **complex** → route a `spec` task (`family: claude`) and dispatch `orchestrator:prompt-creator` (`P/routing.md` §10) with `save_cmd` = `node "${CLAUDE_PLUGIN_ROOT}/scripts/run.mjs" save-prompt --run D` in its brief. It returns `questions[]` → ask them in ONE AskUserQuestion → resume the SAME agent with SendMessage (≤ 3 rounds). On `ready` (the save command already linted it): continue as simple with `D/prompt.md` as the source of every brief.
 - **huge** → split into `D/part-N.md` (`P/routing.md` §11, `P/templates/split.md`), lint each with `--part`. Each part runs like a simple request in its own subagent(s) with fresh context; handoff through the repo and `D/handoff/`. You keep only the ledger.
 - `egm_gate`: `egm-gate.mjs --class <c> --critical <bool>` before planning. `action: continue` → go on (placeholder; the EGM mode plugs in here).
 - `--dry-run`: `dryrun.mjs --text "<request>"` (add `--tasks` for a sample plan), show its output, stop. No model calls.
@@ -30,7 +30,7 @@ One package, ≤ 2 files, ≤ ~50 lines, risk low → do it yourself (+ ONE cros
 
 ## 3. Dispatch
 Per wave: `run.mjs assign --run D --json` → show `.table` verbatim (a), then dispatch everything in `.dispatch` (≤ `max_parallel` per pool, disjoint files only). Briefs: `P/templates/brief.md` (reviews: `P/templates/review.md`), self-contained, ≤ ~40 lines, no secrets, no history.
-- `via: agent` → Agent tool with `subagent_type`, `model`, `effort` exactly as given and `description` = the item's `description` (the persona shows in the UI). Then `usage.mjs log --model <m> --effort <e> --task-type <t> --result ok|fail [--tokens N]`.
+- `via: agent` → Agent tool with `subagent_type`, `model`, `effort` exactly as given and `description` = the item's `description` (the persona shows in the UI). Then `usage.mjs log --model <m> --effort <e> --task-type <t> --result ok|fail [--tokens N]` (Claude agents only: adapters log themselves).
 - `via: adapter` → `<script> --model <m> --effort <e> --mode implement|review|research --prompt-file <f> --cwd <repo> --task-type <t> --complexity <c> --risk <r> --sensitivity <s> [--file <path> …]` (`run-codex|grok|gemini.mjs`; Codex diff review `--review-diff`; every file the worker sees via `--file` for the privacy gate; Grok/Gemini implement: `--allow-cmd` per command). Returns ONE JSON (`ok, error_kind, text, usage, fallback_hint, run_dir, session_id`).
 - Fix rounds resume the worker: Codex `--resume-of`, Grok/Gemini `--resume-session`, Claude agents SendMessage.
 - Workers never commit, push or switch branches. Never use `codex:codex-rescue`, `grok-build:*` or `Skill(codex:rescue)` here. Never pass `--approved` / `--allow-secrets` without an explicit yes.
