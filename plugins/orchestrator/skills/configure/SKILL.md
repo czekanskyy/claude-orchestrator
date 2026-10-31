@@ -23,3 +23,4 @@ Round D — main session and repos. Main family: ask only when more than one pri
 Write the answers as JSON to a scratch file and run `configure.mjs apply --answers <file>`:
 `{"main_family":"…","families":{"<f>":{"enabled":true,"plans":["…"],"data_policy":{"sensitive_ok":false}}},"defaults":{"orchestrator":"ask"}}` — add `data_policy` only for non-catalog choices (`sensitive_ok` true/false), and `"enabled": false` for families the user dropped. Omitted families and keys keep their values, so the command is idempotent. A schema or secret error means nothing was written: fix the answers and retry.
 Then print `configure.mjs show --md` and, in Polish: what was saved, which families can receive sensitive data and which cannot, one next step (`/orchestrator:doctor`).
+Per-repo setup is separate: `/orchestrator:init` (once per non-empty repo; it settles that repo's rules vs these defaults).

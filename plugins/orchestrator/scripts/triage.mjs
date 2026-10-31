@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { loadRegistry, parseArgs, fail } from './lib/common.mjs';
-import { scanTextForSensitivePaths } from './lib/privacy.mjs';
+import { scanTextForSensitivePaths, scanTextForGlobs } from './lib/privacy.mjs';
 import { initRun } from './run.mjs';
 
 // Stems are matched as word prefixes so Polish inflections count (kolor, koloru, kolorze).
@@ -59,12 +59,18 @@ export function triage(text, reg = loadRegistry()) {
   if (cls === 'complex' && complexWhy.length >= 2) confidence = 'high';
   if (cls === 'huge') confidence = f.huge.length >= 2 || f.words >= 450 || f.items >= 8 ? 'high' : 'medium';
 
-  const critical = f.critical.length > 0;
+  // repo profile: paths the user declared critical force risk high (the class stays as judged above)
+  const critHits = scanTextForGlobs(reg.meta.repo_rules?.critical_globs || [], text);
+  const critical = f.critical.length > 0 || critHits.length > 0;
+  if (critHits.length) reasons.push(`critical path (repo profile): ${critHits.map((h) => h.file).join(', ')}`);
   const docsOnly = f.docs.length > 0 && f.files.every((x) => DOC_FILE.test(x)) && !critical && !f.sensitive.length;
-  const sensitivity = pathHits.length || f.sensitive.length ? 'sensitive' : docsOnly ? 'none' : 'internal';
+  // the baseline is the effective default (user config, or the repo profile's), not a hardcoded "internal"
+  const base = reg.meta.default_sensitivity || 'internal';
+  const sensitivity = pathHits.length || f.sensitive.length ? 'sensitive' : docsOnly && base !== 'sensitive' ? 'none' : base;
   const risk_hint = critical ? 'high' : cls === 'simple' ? 'low' : 'med';
   return {
     class: cls, confidence, sensitivity, critical, risk_hint, reasons,
+    critical_paths: critHits.map((h) => h.file),
     sensitivity_why: sensitivity === 'sensitive' ? [...pathHits.map((h) => h.file), ...f.sensitive] : [],
     signals: { words: f.words, items: f.items, files: f.files.length, simple: f.simple.length, complex: f.complex.length, huge: f.huge.length, ambiguity: f.ambiguity, questions: f.questions, critical: f.critical },
     note: confidence === 'low' ? 'Mixed signals: decide yourself (routing.md §1).' : 'Proposal only: override when you know better.',

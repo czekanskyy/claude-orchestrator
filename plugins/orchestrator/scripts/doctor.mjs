@@ -8,11 +8,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { loadRegistry, enabledFamilies, allPoolStatus, parseArgs, runProcess, effortRank, PLUGIN_DIR } from './lib/common.mjs';
+import { loadRegistry, enabledFamilies, allPoolStatus, parseArgs, runProcess, effortRank, PLUGIN_DIR, repoRoot, readProjectPrefs } from './lib/common.mjs';
+import { repoProfileStatus, rulesFrom, profileConflicts } from './lib/repo-profile.mjs';
 import { syncCodexLimits } from './lib/codex-limits.mjs';
 import { readConfig, validateConfig, serializeConfig, CONFIG_SCHEMA_VERSION } from './lib/config.mjs';
 import { cliInfo, authCheck } from './lib/health.mjs';
-import { validate, staleCheck, route } from './registry.mjs';
+import { validate, staleCheck, route, projectOrchestrators } from './registry.mjs';
 import { statusMarkdown } from './usage.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -59,6 +60,29 @@ function checkRegistry(reg) {
     }
   }
   if (planStale.length) add('privacy terms', 'warn', `data-policy check older than ${reg.meta.stale_after_days} d: ${planStale.join(', ')}`, '/orchestrator:update');
+}
+
+// Per-repo profile of the current repo (offline): missing / ok / stale, and conflicts with the global setup.
+// Pure: returns the doctor rows [{area, status, detail, fix}] (also called by the selftest).
+export function repoProfileRows(reg, root = repoRoot()) {
+  const st = repoProfileStatus(root);
+  const fix = '/orchestrator:init --refresh';
+  const row = (status, detail, f = '', area = 'repo profile') => ({ area, status, detail, fix: f });
+  if (st.state === 'no-repo') return [row('ok', 'not inside a repo: nothing to check')];
+  if (st.state === 'empty') return [row('ok', 'empty repo: /orchestrator:init is for repos with existing content')];
+  if (st.state === 'none') return [row('warn', `missing for ${path.basename(root)}: the repo's own rules win over orchestrator defaults until it exists`, '/orchestrator:init (once per repo)')];
+  if (st.state === 'invalid') return [row('fail', (st.errors || []).join('; ').slice(0, 140), `${fix} (or repair ${st.file || 'the profile'})`)];
+  const rules = rulesFrom(st.profile);
+  const conflicts = profileConflicts(rules, reg, { project: projectOrchestrators(root), prefs: readProjectPrefs(root) });
+  const stale = st.state === 'stale' ? [...st.diff.changed, ...st.diff.removed, ...st.diff.added].slice(0, 4).join(', ') : '';
+  const summary = `${st.source}, saved ${st.updated || '?'}: commit=${rules.commit.policy}, ${rules.critical_globs.length} critical paths, sensitivity=${rules.sensitivity.default || 'global'}, egm=${rules.egm}`;
+  const rows = [row(stale ? 'warn' : 'ok', stale ? `stale, source docs changed (${stale}); ${summary}` : summary, stale ? fix : '')];
+  if (conflicts.length) rows.push(row('warn', conflicts[0], conflicts.length > 1 ? `${conflicts.length - 1} more; ${fix}` : '/orchestrator:configure or re-run init', 'repo profile vs config'));
+  return rows;
+}
+
+function checkRepoProfile(reg) {
+  for (const r of repoProfileRows(reg)) add(r.area, r.status, r.detail, r.fix);
 }
 
 function checkAgents(reg) {
@@ -197,6 +221,7 @@ export async function doctor(a = {}) {
   const reg = loadRegistry();
   checkConfig(reg);
   checkRegistry(reg);
+  checkRepoProfile(reg);
   checkAgents(reg);
   await checkInstall();
   await checkFamilies(reg);

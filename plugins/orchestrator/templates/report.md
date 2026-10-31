@@ -20,4 +20,4 @@
 - **Pule:** {{pool}}
 ### Commity
 {{#commits}}- `{{.}}`
-{{^commits}}- brak
+{{^commits}}- {{no_commits}}

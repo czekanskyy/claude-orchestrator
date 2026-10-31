@@ -1,5 +1,11 @@
 # Changelog: orchestrator registry
 
+## Unreleased: `/orchestrator:init` (per-repo profile)
+- New skill `init` (user-triggered only: `disable-model-invocation`): one-time setup of an existing, non-empty repo. `scripts/repo-scan.mjs` (read-only, zero tokens, one compact JSON, secret files by name only), `scripts/init.mjs` (`plan`, `dry-run`, `apply`, `show`, `status`, `rules`), Polish interview (≤ 4 questions per call, ≤ 3 rounds, only real conflicts, recommendation = the repo's rule). `--refresh` re-asks only what changed; `--dry-run` writes nothing.
+- Profile stored user-local in `~/.claude/orchestrator/repos/` keyed by repo identity (remote, else path); optional shareable `repo_profile:` block in `<repo>/.claude/orchestrator.yaml` (separate question, never committed). v2 `projects.yaml` untouched; the orchestrator choice still lives there. A fingerprint of the source docs detects staleness.
+- Consumption: preflight prints a `Repo rules:` block (or one line suggesting init); commit policy/format/attribution, docs duties, verification commands and definition of done reach briefs, runner checks and the final report; critical paths force `risk: high` (router) and flag triage; the repo sensitivity default is the privacy baseline; EGM setting reaches `egm_gate`. Precedence: profile > repo rules > defaults (`references/repo-init.md`).
+- Doctor: `repo profile` row (missing / ok / stale / invalid) and `repo profile vs config` conflicts. Fix: triage no longer hardcodes `internal` as the baseline sensitivity.
+
 ## 2026-10-31: v3.1.0 (workflow: triage, prompt-creator, personas, silence, low-trust review)
 - Triage first: `scripts/triage.mjs` proposes simple / complex / huge, `sensitivity` and `critical` from deterministic signals (zero tokens); the model keeps the judgment. Rubric and split criteria: `routing.md` §1, §10, §11.
 - New task type `spec` and agent `prompt-creator` (complex path). The router picks the tier: light models score `spec: 2`, below the floor of 3, so it resolves to a standard model at medium effort. Read-only repo access plus doc lookup; batched Q&A through the orchestrator (subagents have no AskUserQuestion: `questions[]`, then SendMessage resume, max 3 rounds); writes `runs/<run>/prompt.md`.

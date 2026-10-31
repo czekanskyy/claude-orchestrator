@@ -1,7 +1,7 @@
 {
   "name": "orchestrator",
   "version": "3.1.0",
-  "description": "Multi-model orchestrator: Claude subagents plus GPT (Codex), Grok and Gemini workers with a privacy model, cross-family review and pool tracking. Commands: orchestrate, configure, doctor, update.",
+  "description": "Multi-model orchestrator: Claude subagents plus GPT (Codex), Grok and Gemini workers with a privacy model, cross-family review and pool tracking. Commands: orchestrate, configure, doctor, update, init.",
   "author": { "name": "Dominik Czekański" },
   "repository": "https://github.com/czekanskyy/claude-orchestrator",
   "keywords": ["orchestration", "multi-model", "codex", "grok", "gemini", "subagents"]

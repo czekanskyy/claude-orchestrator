@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Self-tests. No real model calls and none of the user's state: isolated ORCH_HOME/ORCH_CONFIG, --simulate and a mock agy.
-// Usage: node selftest.mjs [all|dryrun|fallback|escalate|update-detect|resume|overlay|accounts|gemini|privacy|config|doctor|update|migrate|guard|triage|flow|render] [--verbose]
+// Usage: node selftest.mjs [all|dryrun|fallback|escalate|update-detect|resume|overlay|accounts|gemini|privacy|config|doctor|update|migrate|guard|triage|flow|render|init] [--verbose]
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -644,7 +644,246 @@ function renderScenario() {
   check('render', 'run.mjs lint-prompt exit codes', run('lint-prompt', lp).status === 0 && run('lint-prompt', brief).status !== 0);
 }
 
-const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario };
+// ---------------------------------------------------------------- v3: /orchestrator:init (scan, interview logic, precedence, profile, consumption)
+const initLib = {
+  facts: await import(pathToFileURL(path.join(HERE, 'lib', 'repo-facts.mjs')).href),
+  profile: await import(pathToFileURL(path.join(HERE, 'lib', 'repo-profile.mjs')).href),
+  questions: await import(pathToFileURL(path.join(HERE, 'lib', 'repo-questions.mjs')).href),
+  scan: await import(pathToFileURL(path.join(HERE, 'repo-scan.mjs')).href),
+};
+
+async function initScenario() {
+  log('\n=== REPO INIT (scan, questions, precedence, profile, consumption) ===');
+  const { facts, profile: P, questions: Q, scan: S } = initLib;
+  const reg = common.loadRegistry();
+  const root = path.join(TMP, 'init-repos');
+  fs.mkdirSync(root, { recursive: true });
+  const CANARY = ['CANARY_ENV_SECRET_12345', 'CANARY_PEM_SECRET_67890', 'tok_CANARY_REMOTE'];
+
+  // temp git repos: files = { relpath: content }, commits = subjects (each one commits a touched log file)
+  const mk = (name, files, { commits = ['Initial commit'], remote, branches = [] } = {}) => {
+    const dir = path.join(root, name);
+    fs.mkdirSync(dir, { recursive: true });
+    const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+    git('init', '-q'); git('symbolic-ref', 'HEAD', 'refs/heads/main');
+    git('config', 'user.email', 't@t'); git('config', 'user.name', 't'); git('config', 'commit.gpgsign', 'false');
+    if (remote) git('remote', 'add', 'origin', remote);
+    for (const [rel, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, rel), content);
+    }
+    git('add', '--all', '--', '.', ':!.env');
+    commits.forEach((msg, i) => { fs.writeFileSync(path.join(dir, 'history.txt'), `${i}\n`); git('add', 'history.txt'); git('commit', '-q', '--allow-empty', '-m', msg); });
+    for (const b of branches) git('branch', b);
+    return { dir, git };
+  };
+  const snap = (dir) => {
+    const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' }).stdout;
+    const listing = [];
+    const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name === '.git') continue; const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else { const st = fs.statSync(p); listing.push(`${path.relative(dir, p)}:${st.size}:${st.mtimeMs}`); } } };
+    walk(dir);
+    return JSON.stringify([git('status', '--porcelain=v1'), git('rev-list', '--all', '--count'), git('diff', '--cached', '--name-only'), fs.statSync(path.join(dir, '.git', 'index')).mtimeMs, listing]);
+  };
+
+  const contributing = '# Contributing\n\n## Git\n\nNever commit directly to `main`. Only the maintainers commit.\n`develop` is the development base; feature branches are named `feat/<topic>`.\nNo AI/tool authorship anywhere: no Co-Authored-By trailers, no "Generated with" lines.\nUpdate CHANGELOG.md in the same change as the code.\n\n## Definition of done\n\nDefinition of done: tests pass and CHANGELOG.md is current.\n\n## Privacy\n\nThe database holds customer data (GDPR applies).\n';
+  const A = mk('plain', { 'README.md': '# Plain\nJust a readme.\n' }, { commits: ['Initial commit', 'Add readme text'] });
+  const B = mk('policy', {
+    'README.md': '# Widgets\nA tiny widget service.\n', 'CONTRIBUTING.md': contributing, 'CHANGELOG.md': '# Changelog\n',
+    'package.json': JSON.stringify({ name: 'widgets', packageManager: 'pnpm@9.0.0', scripts: { test: 'node --test', lint: 'eslint .', typecheck: 'tsc --noEmit', build: 'tsc', 'check:docs': 'node scripts/check-docs.mjs' } }),
+    'pnpm-lock.yaml': 'lockfileVersion: 9\n',
+    '.github/workflows/ci.yml': 'name: ci\non:\n  push:\n    branches: [main, develop]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: pnpm install --frozen-lockfile\n      - run: pnpm test\n      - run: pnpm lint\n      - run: pnpm exec tsc --noEmit\n',
+    '.claude/skills/orchestrate/SKILL.md': '---\nname: orchestrate\ndescription: the team\'s own orchestrator\n---\nRead docs/orchestration.md.\n',
+    '.claude/settings.json': JSON.stringify({ permissions: { allow: ['Bash(git commit:*)'], deny: ['Bash(git push:*)'] }, attribution: { commit: '', pr: '' } }),
+    '.gitignore': '.env\n', '.env': `API_TOKEN=${CANARY[0]}\n`, '.env.example': 'API_TOKEN=\n',
+    'secrets/key.pem': `-----BEGIN PRIVATE KEY-----\n${CANARY[1]}\n-----END PRIVATE KEY-----\n`,
+    'src/auth/login.ts': 'export const login = () => 1;\n', 'src/migrations/001-init.ts': 'export {};\n',
+    '.claude/orchestrator.yaml': '# team overlay\nmeta:\n  stale_after_days: 45\n',
+  }, { commits: ['[WID] Add login', '[WID] Add widgets', '[WID] Fix lint', '[WID] Add docs', '[WID] Tune build', '[WID] Add tests', '[WID] Polish'], remote: `https://builder:${CANARY[2]}@github.com/Acme/Widgets.git`, branches: ['develop', 'feat/a', 'feat/b', 'feat/c'] });
+  const Cdir = path.join(root, 'empty'); fs.mkdirSync(Cdir); spawnSync('git', ['init', '-q'], { cwd: Cdir });
+  const state = process.env.ORCH_HOME;
+  const env = { ORCH_NO_OVERLAY: '0', ORCH_PROJECT: B.dir };
+  const initCli = (args, extra = {}) => runNode(path.join(HERE, 'init.mjs'), args, { ...env, ...extra });
+
+  // ---- scans (a) plain, (b) policies + own orchestration, (c) empty
+  const reads = [];
+  const sa = S.scanRepo(A.dir, { reg });
+  check('init', 'scan (a) plain repo: README found, no commands, no own orchestrator, no secrets, path identity', sa.empty === false && sa.docs.found.some((f) => f.path === 'README.md') && !Object.keys(sa.stack.commands).length && !sa.orchestrators.repo_level.length && sa.sensitivity.secret_files_total === 0 && sa.identity.kind === 'path', JSON.stringify(sa.stack));
+  const qa = Q.buildQuestions(sa, Q.buildProposal(sa, { reg }), { reg });
+  check('init', 'plain repo: nothing to settle, so no questions (everything skipped with a reason)', qa.questions.length === 0 && qa.skipped.length === P.DECISION_KEYS.length && qa.skipped.every((s) => s.why), JSON.stringify(qa.skipped));
+
+  const sb = S.scanRepo(B.dir, { reg, onRead: (p) => reads.push(p) });
+  const h = sb.policies.hints;
+  check('init', 'scan (b): remote identity without credentials, default branch verified, commit style bracket-tag', sb.identity.id === 'github.com/acme/widgets' && sb.identity.kind === 'remote' && sb.repo.default_branch?.name && sb.commits.style === 'bracket-tag' && sb.commits.tags.includes('WID'), JSON.stringify([sb.identity, sb.repo.default_branch, sb.commits]));
+  check('init', 'scan (b): commit/push/attribution/base-branch rules found in docs and settings', h.commit.docs === 'orchestrator_only' && h.commit.settings === 'allow' && h.push.settings === 'deny' && h.no_ai_attribution === true && h.docs_base_branch === 'develop' && h.protected_branches.includes('main'), JSON.stringify(h));
+  check('init', 'scan (b): stack commands with their source, CI verification classified, docs duty and DoD sentences surfaced', sb.stack.package_manager === 'pnpm' && sb.stack.commands.test.cmd === 'pnpm test' && sb.stack.commands.test.source.includes('package.json') && sb.policies.ci.verification.some((v) => v.role === 'typecheck') && sb.docs.evidence.some((e) => /CHANGELOG/.test(e) && /docs_duty/.test(e)) && sb.docs.evidence.some((e) => /Definition of done/.test(e)), JSON.stringify([sb.stack.commands, sb.policies.ci.verification]));
+  check('init', 'scan (b): own orchestrator, critical paths, secret files (name + tracked flag), template and conflicts', sb.orchestrators.repo_level[0]?.invoke === '/orchestrate' && sb.critical_paths.some((c) => c.glob === 'src/auth/**') && sb.critical_paths.some((c) => c.glob === 'src/migrations/**') && sb.sensitivity.secret_files.some((s) => s.path === '.env' && !s.tracked) && sb.sensitivity.secret_files.some((s) => s.path === 'secrets/key.pem' && s.tracked) && sb.sensitivity.env_templates.includes('.env.example') && sb.conflicts.some((c) => c.id === 'tracked_secret') && sb.conflicts.some((c) => c.id === 'base_branch'), JSON.stringify([sb.sensitivity, sb.conflicts.map((c) => c.id)]));
+  check('init', 'scan (b): branch patterns from the real refs', sb.branches.patterns.some((p) => p.pattern === 'feat/<topic>' && p.n === 3) && sb.branches.fixed.includes('develop'), JSON.stringify(sb.branches));
+  const sc = S.scanRepo(Cdir, { reg });
+  check('init', 'scan (c) empty repo: reported as empty', sc.empty === true);
+  check('init', 'plan on an empty repo says so (one message) and dry-run prints one line', initCli(['plan', '--repo', Cdir]).json?.state === 'empty' && /puste/.test(initCli(['dry-run', '--repo', Cdir]).stdout) && initCli(['dry-run', '--repo', Cdir]).stdout.trim().split('\n').length === 1);
+
+  // ---- secrets: names only, contents never read, nothing leaks into the output
+  const cliScan = runNode(path.join(HERE, 'repo-scan.mjs'), ['--repo', B.dir]);
+  check('init', 'secret files are detected without their contents ever being read (read log, guarded reader, output)', reads.includes('CONTRIBUTING.md') && !reads.some((p) => /(^|\/)(\.env|secrets\/)|\.pem$/.test(p)) && facts.fsIo(B.dir).read('.env') === null && facts.fsIo(B.dir).read('secrets/key.pem') === null && facts.fsIo(B.dir).read('README.md') !== null, reads.join(','));
+  check('init', 'no secret value (env, pem, remote token) appears in the scan output', !CANARY.some((c) => JSON.stringify(sb).includes(c) || cliScan.stdout.includes(c)));
+  check('init', 'the scan is ONE compact JSON of modest size', cliScan.json && cliScan.stdout.trim().split('\n').length === 1 && cliScan.stdout.length < 14000, `${cliScan.stdout.length} chars`);
+
+  // ---- questions for (b)
+  const pb = Q.buildProposal(sb, { reg });
+  const qb = Q.buildQuestions(sb, pb, { reg });
+  const ids = qb.questions.map((q) => q.id);
+  check('init', 'questions (b): the real decisions are asked, recommendation first and it is the repo rule', ['orchestrator', 'commit', 'branching', 'docs_duties', 'verify', 'critical_paths', 'sensitivity', 'egm'].every((k) => ids.includes(k)) && qb.questions.every((q) => q.options[0].label.endsWith('(Recommended)') && q.options[0].choice !== 'default' || q.id === 'egm'), ids.join(','));
+  check('init', 'questions: at most 4 per round, at most 3 rounds, Polish, with an options description', qb.rounds.length <= 3 && qb.rounds.every((r) => r.length <= 4) && qb.questions.every((q) => q.options.length >= 2 && q.options.length <= 4 && q.options.every((o) => o.description) && /[?]$/.test(q.question)) && /Jak|Który|Co|Jaki|Repo|Zmiany/.test(qb.questions[0].question), JSON.stringify(qb.rounds));
+  check('init', 'proposal (b): repo values derived from the facts', pb.decisions.commit.repo.policy === 'orchestrator' && pb.decisions.commit.repo.attribution === 'none' && /\[<TAG>\]/.test(pb.decisions.commit.repo.format) && pb.decisions.branching.repo.base === 'develop' && pb.decisions.verify.repo.typecheck === 'pnpm exec tsc --noEmit' && pb.decisions.verify.repo.done_when.some((x) => /Definition of done/.test(x)) && pb.decisions.sensitivity.repo.default === 'sensitive', JSON.stringify(pb.decisions));
+
+  // ---- precedence and merge logic: a mix of repo-wins and orchestrator-wins answers
+  const def = P.orchestratorDefaults();
+  const repoCommit = { policy: 'forbidden', attribution: 'none', format: '[T] x' };
+  const sCommit = (choice, custom) => P.settle('commit', def.commit, repoCommit, choice, custom);
+  check('init', 'settle repo: the repo\'s fields win, the default fills what it is silent about', JSON.stringify(sCommit('repo')) === JSON.stringify({ policy: 'forbidden', granularity: 'checkpoint', attribution: 'none', push: 'ask', format: '[T] x' }), JSON.stringify(sCommit('repo')));
+  check('init', 'settle default: the orchestrator default wins over the repo rule', JSON.stringify(sCommit('default')) === JSON.stringify(def.commit));
+  check('init', 'settle merge: the stricter of both (forbidden beats orchestrator; a stricter default beats a laxer repo)', sCommit('merge').policy === 'forbidden' && P.settle('commit', { policy: 'ask', push: 'ask' }, { policy: 'orchestrator', push: 'never' }, 'merge').policy === 'ask' && P.settle('commit', { policy: 'ask', push: 'ask' }, { policy: 'orchestrator', push: 'never' }, 'merge').push === 'never');
+  check('init', 'settle: lists are united on merge (repo first), replaced on repo, dropped on default, custom wins', JSON.stringify(P.settle('docs_duties', ['a'], ['b', 'a'], 'merge')) === '["b","a"]' && JSON.stringify(P.settle('docs_duties', ['a'], ['b'], 'repo')) === '["b"]' && JSON.stringify(P.settle('docs_duties', ['a'], ['b'], 'default')) === '["a"]' && JSON.stringify(P.settle('docs_duties', ['a'], ['b'], 'custom', ['z'])) === '["z"]');
+  check('init', 'settle: a silent repo leaves the default; orchestrator choice repo=project, default=global, merge=ask', JSON.stringify(P.settle('branching', def.branching, undefined, 'repo')) === JSON.stringify(def.branching) && P.settle('orchestrator', 'global', 'project', 'repo') === 'project' && P.settle('orchestrator', 'global', 'project', 'default') === 'global' && P.settle('orchestrator', 'global', 'project', 'merge') === 'ask' && P.settle('orchestrator', 'global', undefined, 'merge') === 'global');
+  const mixed = P.applyAnswers(pb, { commit: 'repo', branching: 'default', verify: 'merge', docs_duties: { choice: 'custom', value: ['Update CHANGELOG.md'] }, orchestrator: 'default', sensitivity: { choice: 'custom', value: { default: 'internal', globs: [] } }, egm: { choice: 'custom', value: 'off' }, _repo: { critical_paths: ['src/auth/**'] }, critical_paths: 'repo' });
+  check('init', 'applyAnswers mixes repo-wins and orchestrator-wins decisions and records how each was settled', mixed.decisions.commit.attribution === 'none' && mixed.decisions.branching.action === 'current_branch' && mixed.decisions.branching.base === undefined && mixed.decisions.verify.test === 'pnpm test' && mixed.decisions.verify.typecheck === 'pnpm exec tsc --noEmit' && mixed.decisions.orchestrator === 'global' && mixed.decisions.docs_duties[0] === 'Update CHANGELOG.md' && JSON.stringify(mixed.decisions.critical_paths) === '["src/auth/**"]' && mixed.decisions.egm === 'off' && mixed.choices.commit === 'repo' && mixed.choices.branching === 'default' && mixed.choices.docs_duties === 'custom' && mixed.decisions.sensitivity.default === 'internal', JSON.stringify(mixed));
+  let bad = null; try { P.applyAnswers(pb, { commit: 'whatever' }); } catch (e) { bad = e.message; }
+  check('init', 'an unknown choice is refused', /unknown choice/.test(bad || ''), bad);
+  const prof = P.buildProfile({ identity: facts.repoIdentity(B.dir), fingerprint: sb.fingerprint, ...mixed, today: '2026-10-31' });
+  check('init', 'profile validates; secrets, bad enums and unknown keys are refused', P.validateProfile(prof).ok && !P.validateProfile({ ...prof, decisions: { ...prof.decisions, commit: { policy: 'sometimes' } } }).ok && !P.validateProfile({ ...prof, decisions: { ...prof.decisions, docs_duties: ['key sk-abcdefghijklmnopqrstuvwxyz123456'] } }).ok && !P.validateProfile({ ...prof, decisions: { ...prof.decisions, extra: 1 } }).ok);
+  const parsed = (await import(pathToFileURL(path.join(HERE, 'lib', 'yaml-lite.mjs')).href)).parseYaml(P.serializeProfile(prof));
+  check('init', 'profile YAML round-trips through the yaml-lite parser', JSON.stringify(parsed.decisions) === JSON.stringify(JSON.parse(JSON.stringify(prof.decisions))) && parsed.fingerprint.hash === prof.fingerprint.hash && Object.keys(parsed.fingerprint.sources).length === Object.keys(prof.fingerprint.sources).length);
+
+  // ---- fingerprint: a doc edit changes it, line endings and the changelog do not
+  const io = facts.fsIo(B.dir);
+  const fp1 = facts.computeFingerprint(io);
+  const cpath = path.join(B.dir, 'CONTRIBUTING.md');
+  fs.writeFileSync(cpath, contributing.replace(/\n/g, '\r\n'));
+  const fpCrlf = facts.computeFingerprint(io);
+  fs.writeFileSync(path.join(B.dir, 'CHANGELOG.md'), '# Changelog\n- entry\n');
+  const fpLog = facts.computeFingerprint(io);
+  fs.writeFileSync(cpath, `${contributing}Always squash.\n`);
+  const fp2 = facts.computeFingerprint(io);
+  fs.writeFileSync(cpath, contributing); fs.writeFileSync(path.join(B.dir, 'CHANGELOG.md'), '# Changelog\n');
+  const fp3 = facts.computeFingerprint(io);
+  fs.writeFileSync(path.join(B.dir, 'CODEOWNERS'), '* @a\n');
+  const fp4 = facts.computeFingerprint(io);
+  fs.rmSync(path.join(B.dir, 'CODEOWNERS'));
+  check('init', 'the profile fingerprint changes after a doc edit and names the file', fp1.hash !== fp2.hash && facts.diffFingerprint(fp1, fp2).changed.join() === 'CONTRIBUTING.md');
+  check('init', 'the fingerprint ignores line endings and the changelog, and is stable when the doc is restored', fp1.hash === fpCrlf.hash && fp1.hash === fpLog.hash && fp1.hash === fp3.hash);
+  check('init', 'a newly added policy doc is reported as added', facts.diffFingerprint(fp1, fp4).added.join() === 'CODEOWNERS');
+
+  // ---- read-only plan and dry-run
+  // git rewrites .git/index for "racy" entries (files modified within the index's timestamp resolution): settle the fixture
+  // first, so any later change of the index would really come from the code under test
+  await new Promise((r) => setTimeout(r, 1200));
+  B.git('update-index', '-q', '--refresh');
+  snap(B.dir);
+  const before = snap(B.dir);
+  const plan0 = initCli(['plan']);
+  const dry = initCli(['dry-run']);
+  const planChecks = {
+    ready: plan0.json?.state === 'ready',
+    scan: plan0.json?.scan?.docs?.found?.length >= 6,
+    oneLine: plan0.stdout.trim().split('\n').length === 1,
+    dryText: /## Wykryto/.test(dry.stdout) && /nic nie zapisano/.test(dry.stdout) && /decisions:/.test(dry.stdout),
+    questions: plan0.json?.questions?.length >= 7 && plan0.json.share_question.options.length === 2,
+    noProfileDir: !fs.existsSync(P.profilesDir()),
+    repoUntouched: snap(B.dir) === before,
+  };
+  check('init', 'plan returns state ready with the compact scan, questions in rounds and the share question; dry-run prints the proposed profile; neither writes', Object.values(planChecks).every(Boolean), JSON.stringify(planChecks) + plan0.stderr);
+
+  // ---- apply: local profile, no repo changes, no commit
+  const answersFile = path.join(root, 'answers.json');
+  const apply = (answers, extraArgs = [], extraEnv = {}) => { fs.writeFileSync(answersFile, JSON.stringify(answers)); return initCli(['apply', '--answers', answersFile, ...extraArgs], extraEnv); };
+  const A1 = { commit: 'repo', branching: 'repo', verify: 'repo', critical_paths: 'repo', docs_duties: { choice: 'custom', value: ['Update CHANGELOG.md in the same change'] }, orchestrator: 'default', sensitivity: { choice: 'custom', value: { default: 'sensitive', globs: [] } }, egm: { choice: 'custom', value: 'off' } };
+  const dryApply = apply(A1, ['--dry-run']);
+  check('init', 'apply --dry-run prints the profile and writes nothing', dryApply.json?.dry_run === true && dryApply.json.profile.decisions.egm === 'off' && !fs.existsSync(P.profilesDir()));
+  const commitsBefore = spawnSync('git', ['rev-list', '--count', 'HEAD'], { cwd: B.dir, encoding: 'utf8' }).stdout;
+  const stat0 = snap(B.dir);
+  const ap = apply(A1);
+  const profFile = ap.json?.written?.profile;
+  check('init', 'apply stores the profile user-local (keyed by repo identity) and leaves the repo untouched (no commit, nothing staged)', ap.json?.ok === true && profFile && profFile.startsWith(P.profilesDir()) && fs.existsSync(profFile) && ap.json.committed === false && snap(B.dir) === stat0 && spawnSync('git', ['rev-list', '--count', 'HEAD'], { cwd: B.dir, encoding: 'utf8' }).stdout === commitsBefore, JSON.stringify(ap.json) + ap.stderr);
+  check('init', 'the orchestrator choice goes to the existing projects.yaml switch (v2 data kept)', common.readProjectPrefs(B.dir).orchestrator === 'global');
+  const found = P.readRepoProfile(B.dir);
+  check('init', 'profile is found by identity: also from another clone with a differently spelled remote URL', found.source === 'local' && P.readRepoProfile(mk('clone', { 'README.md': 'x' }, { remote: 'git@github.com:ACME/widgets.git' }).dir).profile?.identity === 'github.com/acme/widgets');
+  check('init', 'plan on a repo with a profile shows the summary and offers --refresh/--show; it never re-runs on its own', initCli(['plan']).json?.state === 'exists' && initCli(['plan']).json.offer.includes('--refresh') && /Profil repo/.test(initCli(['show']).stdout));
+  const refresh = initCli(['plan', '--refresh']);
+  check('init', '--refresh asks only about decisions whose evidence changed (none here)', refresh.json?.state === 'ready' && refresh.json.questions.length === 0 && refresh.json.skipped.every((s) => /unchanged/.test(s.why)), JSON.stringify(refresh.json?.skipped));
+
+  // ---- consumption (the local profile is visible in-process through ORCH_HOME + ORCH_PROJECT)
+  process.env.ORCH_PROJECT = B.dir;
+  const regB = common.loadRegistry();
+  const rules = regB.meta.repo_rules;
+  check('init', 'loadRegistry exposes the rules and the profile\'s sensitivity default beats the global one', rules?.commit.attribution === 'none' && rules.commit.policy === 'orchestrator' && rules.critical_globs.includes('src/auth/**') && regB.meta.default_sensitivity === 'sensitive' && rules.egm === 'off', JSON.stringify(rules));
+  const tr = triageLib.triage('Fix the bug in src/auth/login.ts', regB);
+  check('init', 'triage: a request naming a critical path is critical with risk hint high; the baseline sensitivity is the repo default', tr.critical === true && tr.risk_hint === 'high' && tr.critical_paths.includes('src/auth/login.ts') && triageLib.triage('Rename a button label', regB).sensitivity === 'sensitive');
+  const routed = registry.route(regB, [{ id: 'T1', title: 'Tweak login', type: 'implement', complexity: 'S', risk: 'low', sensitivity: 'internal', files: ['src/auth/login.ts'] }, { id: 'T2', title: 'Tweak a label', type: 'implement', complexity: 'S', risk: 'low', sensitivity: 'internal', files: ['src/label.ts'] }], { pools: evenPools() });
+  const t1 = routed.assignments.find((a) => a.id === 'T1'); const t2 = routed.assignments.find((a) => a.id === 'T2');
+  check('init', 'router: a task whose files hit a critical path becomes risk high with a security-lens review; others keep their risk', t1.risk === 'high' && /critical path/.test(t1.risk_reason) && routed.assignments.some((a) => a.reviews === 'T1' && a.lens === 'security') && t2.risk === 'low');
+  check('init', 'egm_gate carries the repo setting (off) and still continues', gateLib.egmGate({ critical: true, setting: rules.egm }).setting === 'off' && runNode(path.join(HERE, 'egm-gate.mjs'), ['--critical', 'true'], env).json?.setting === 'off');
+  const pre = registry.preflight(regB);
+  const lines = P.rulesLines(pre.repo_profile.rules);
+  check('init', 'preflight loads the profile as a few rule lines (commit, attribution, docs duty, verify, critical paths, sensitivity, egm)', pre.repo_profile.state === 'ok' && lines.length <= 9 && lines.some((l) => /NO AI\/tool attribution/.test(l)) && lines.some((l) => /CHANGELOG/.test(l)) && lines.some((l) => /verify with: test=pnpm test/.test(l)) && lines.some((l) => /critical paths/.test(l)) && lines.some((l) => /sensitivity default: sensitive/.test(l)) && !pre.warnings.some((w) => /\/orchestrator:init/.test(w)), lines.join(' | '));
+  process.env.ORCH_PROJECT = A.dir;
+  const preA = registry.preflight(common.loadRegistry());
+  check('init', 'preflight in a non-empty repo without a profile prints one line suggesting /orchestrator:init and continues', preA.repo_profile.state === 'none' && preA.warnings.filter((w) => /\/orchestrator:init/.test(w)).length === 1);
+  process.env.ORCH_PROJECT = Cdir;
+  check('init', 'preflight in an empty repo does not suggest init', !registry.preflight(common.loadRegistry()).warnings.some((w) => /\/orchestrator:init/.test(w)));
+  process.env.ORCH_PROJECT = B.dir;
+
+  // ---- commit policy reaches the final report
+  const A2 = { ...A1, commit: { choice: 'custom', value: { policy: 'forbidden' } }, sensitivity: { choice: 'custom', value: { default: 'internal', globs: [] } } };
+  check('init', 're-applying keeps a .bak and is idempotent in shape', apply(A2).json?.ok === true && fs.existsSync(`${profFile}.bak`) && fs.readdirSync(P.profilesDir()).filter((f) => f.endsWith('.yaml')).length === 1);
+  const runInit = runNode(path.join(HERE, 'run.mjs'), ['init', '--slug', 'initrep', '--repo', B.dir], env).json;
+  const repData = path.join(root, 'rep.json'); fs.writeFileSync(repData, JSON.stringify({ result: 'done', title: 'T', summary: 's', done: ['x'], tests: ['ok'] }));
+  const rep = runNode(path.join(HERE, 'run.mjs'), ['report', '--run', runInit.dir, '--data', repData], env);
+  check('init', 'commit policy forbidden: the final report says nothing was committed and why', /profil repo zabrania commitów/.test(rep.stdout) && common.loadRegistry().meta.repo_rules.commit.policy === 'forbidden' && common.loadRegistry().meta.default_sensitivity === 'internal', rep.stdout.slice(-300));
+  const doctorLib = await import(pathToFileURL(path.join(HERE, 'doctor.mjs')).href);
+  const row = (r, regX = common.loadRegistry()) => doctorLib.repoProfileRows(regX, r);
+
+  // ---- staleness, doctor, conflicts
+  check('init', 'doctor: profile ok → ✅ row; repo without profile → ⚠️ missing; empty repo and no repo → ✅', row(B.dir)[0].status === 'ok' && row(A.dir)[0].status === 'warn' && /missing/.test(row(A.dir)[0].detail) && row(Cdir)[0].status === 'ok' && row(null)[0].status === 'ok');
+  fs.writeFileSync(cpath, `${contributing}Always squash.\n`);
+  const stale = P.repoProfileStatus(B.dir);
+  const preS = registry.preflight(common.loadRegistry());
+  check('init', 'after a doc edit the profile is stale: status names the file, doctor warns and suggests --refresh, preflight warns', stale.state === 'stale' && stale.diff.changed.includes('CONTRIBUTING.md') && row(B.dir)[0].status === 'warn' && /--refresh/.test(row(B.dir)[0].fix) && preS.warnings.some((w) => /stale/.test(w) && /--refresh/.test(w)));
+  const refresh2 = initCli(['plan', '--refresh']);
+  check('init', '--refresh after the edit still asks nothing when the derived rules did not change, and keeps the profile otherwise', refresh2.json?.state === 'ready' && refresh2.json.questions.length === 0);
+  fs.writeFileSync(cpath, contributing);
+  const conflicts = P.profileConflicts(P.rulesFrom({ decisions: { sensitivity: { default: 'sensitive' }, orchestrator: 'project' } }), { families: { claude: { enabled: true, data_policy: { sensitive_ok: false } } } }, { project: [], prefs: {} });
+  check('init', 'doctor conflicts: sensitive default with no sensitive_ok family, and an orchestrator the repo no longer ships', conflicts.length === 2 && /fails closed/.test(conflicts[0]) && /none is present/.test(conflicts[1]), JSON.stringify(conflicts));
+  fs.writeFileSync(profFile, fs.readFileSync(profFile, 'utf8').replace('policy: "forbidden"', 'policy: "sometimes"'));
+  check('init', 'an invalid profile is a doctor error with a fix', row(B.dir)[0].status === 'fail' && P.repoProfileStatus(B.dir).state === 'invalid');
+  fs.copyFileSync(`${profFile}.bak`, profFile);
+
+  // ---- shareable block: only that block of .claude/orchestrator.yaml, personal choices left out, no commit
+  const gitB = (...a) => spawnSync('git', a, { cwd: B.dir, encoding: 'utf8' }).stdout;
+  const overlayBefore = fs.readFileSync(path.join(B.dir, '.claude', 'orchestrator.yaml'), 'utf8');
+  const headBefore = gitB('rev-parse', 'HEAD');
+  const shared = apply(A1, ['--share']);
+  const overlayAfter = fs.readFileSync(path.join(B.dir, '.claude', 'orchestrator.yaml'), 'utf8');
+  const sharedParsed = (await import(pathToFileURL(path.join(HERE, 'lib', 'yaml-lite.mjs')).href)).parseYaml(overlayAfter);
+  check('init', '--share writes only the repo_profile block of .claude/orchestrator.yaml, keeps the rest verbatim and does not stage or commit', shared.json?.written?.shared && overlayAfter.startsWith(overlayBefore.trimEnd()) && sharedParsed.meta.stale_after_days === 45 && gitB('status', '--porcelain').trim() === 'M .claude/orchestrator.yaml' && gitB('diff', '--cached', '--name-only').trim() === '' && gitB('rev-parse', 'HEAD') === headBefore, gitB('status', '--porcelain'));
+  check('init', 'the shared block holds only shareable decisions (no orchestrator choice, no EGM) and a fingerprint', Object.keys(sharedParsed.repo_profile.decisions).every((k) => P.SHAREABLE.includes(k)) && sharedParsed.repo_profile.fingerprint.hash);
+  apply(A1, ['--share']);
+  check('init', 'sharing twice keeps one block; the overlay still validates with the block present', (fs.readFileSync(path.join(B.dir, '.claude', 'orchestrator.yaml'), 'utf8').match(/^repo_profile:/gm) || []).length === 1 && runNode(path.join(HERE, 'registry.mjs'), ['validate'], env).json?.ok === true);
+  const loose = { meta: { default_sensitivity: 'internal', sensitive_globs: [] } };
+  const other = mk('other', { 'README.md': 'x' }, { remote: 'https://github.com/other/repo.git' });
+  process.env.ORCH_PROJECT = other.dir;
+  common.applyRepoProfile(loose, { schema_version: 1, decisions: { sensitivity: { default: 'none' }, critical_paths: ['x/**'] }, fingerprint: {} });
+  const strict = { meta: { default_sensitivity: 'internal', sensitive_globs: [] } };
+  common.applyRepoProfile(strict, { schema_version: 1, decisions: { sensitivity: { default: 'sensitive' } }, fingerprint: {} });
+  check('init', 'a profile that only arrives through the repo\'s own file may tighten privacy but never loosen it', loose.meta.default_sensitivity === 'internal' && loose.meta.repo_rules.critical_globs.includes('x/**') && strict.meta.default_sensitivity === 'sensitive');
+  process.env.ORCH_PROJECT = TMP;
+
+  // ---- skills
+  const skill = (n) => fs.readFileSync(path.join(PLUGIN, 'skills', n, 'SKILL.md'), 'utf8');
+  check('init', 'the init skill is user-only (disable-model-invocation); no other skill is', /^disable-model-invocation: true$/m.test(skill('init')) && /^name: init$/m.test(skill('init')) && ['orchestrate', 'configure', 'doctor', 'update'].every((n) => !/disable-model-invocation/.test(skill(n))));
+  check('init', 'orchestrate and configure only gain a few lines that point to init', /orchestrator:init/.test(skill('orchestrate')) && /orchestrator:init/.test(skill('configure')) && skill('orchestrate').length < 10500 && fs.existsSync(path.join(PLUGIN, 'references', 'repo-init.md')));
+}
+
+const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario, init: initScenario };
 for (const [name, fn] of Object.entries(runs)) if (which === 'all' || which === name) await fn();
 
 log('\n=== RESULTS ===');

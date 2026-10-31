@@ -119,9 +119,14 @@ async function main(argv) {
     case 'report': {
       const l = need();
       const data = JSON.parse(fs.readFileSync(a.data, 'utf8'));
-      data.pool ||= poolLine(loadRegistry(), l);
+      const reg = loadRegistry();
+      data.pool ||= poolLine(reg, l);
       for (const k of ['decisions', 'fallbacks', 'reviews']) data[k] ||= l[k];
       if (!data.commits && l.head) data.commits = (git(l.repo, 'log', '--oneline', `${l.head}..HEAD`) || '').split('\n').filter(Boolean).reverse();
+      // repo profile: say why nothing was committed when the repo's rules keep commits with the user
+      const policy = reg.meta.repo_rules?.commit?.policy;
+      if (policy === 'forbidden') data.no_commits ||= 'brak: profil repo zabrania commitów orkiestratora (zmiany czekają w working tree)';
+      else if (policy === 'ask') data.no_commits ||= 'brak: profil repo wymaga Twojej zgody na commit (zmiany czekają w working tree)';
       const r = renderReport(data);
       process.stdout.write(`${r.text}\n`);
       if (r.over_cap) { process.stderr.write(`report is ${r.lines} lines, cap ${r.cap}: shorten the longest lists\n`); if (a.strict) process.exitCode = 1; }

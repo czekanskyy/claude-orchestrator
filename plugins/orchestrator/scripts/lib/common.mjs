@@ -6,6 +6,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseYaml } from './yaml-lite.mjs';
 import { readConfig, CONFIG_FILE } from './config.mjs';
+import { readRepoProfile, rulesFrom, STRICT } from './repo-profile.mjs';
 
 // Plugin root, derived from this file (${CLAUDE_PLUGIN_ROOT} is not exported to Bash-tool environments).
 export const PLUGIN_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -98,10 +99,13 @@ export function loadRegistry(file = REGISTRY_PATH, { overlay = file === REGISTRY
   let reg = parseYaml(fs.readFileSync(file, 'utf8'));
   const ov = overlay ? findProjectOverlay() : null;
   let overlayCfg = null;
+  let sharedProfile = null;
   if (ov) {
     const o = parseYaml(fs.readFileSync(ov, 'utf8')) || {};
     overlayCfg = o.config || null;
+    sharedProfile = o.repo_profile || null;
     delete o.config;
+    delete o.repo_profile;
     reg = deepMerge(reg, o);
     reg.meta.overlay = ov;
   }
@@ -110,7 +114,25 @@ export function loadRegistry(file = REGISTRY_PATH, { overlay = file === REGISTRY
   if (overlayCfg && cfg) cfg = deepMerge(cfg, overlayCfg);
   else if (overlayCfg) cfg = overlayCfg;
   applyConfig(reg, cfg, cfgError);
+  if (overlay) applyRepoProfile(reg, sharedProfile);
   return reg;
+}
+
+// The per-repo profile from /orchestrator:init (user-local, plus the shareable block of the overlay): its decisions
+// become reg.meta.repo_rules for the workflow, and its sensitivity default beats the user's global default for this repo.
+// A profile that only arrives through the repo's own file (shared) may tighten privacy, never loosen it.
+export function applyRepoProfile(reg, shared) {
+  let found;
+  try { found = readRepoProfile(repoRoot(), { shared }); } catch { return; }
+  const rules = rulesFrom(found.profile);
+  reg.meta.repo_profile = { source: found.source, file: found.file || null };
+  if (!rules) return;
+  reg.meta.repo_rules = rules;
+  const order = STRICT['sensitivity.default'];
+  const next = rules.sensitivity.default;
+  const current = reg.meta.default_sensitivity || 'internal';
+  if (next && (found.source !== 'shared' || order.indexOf(next) > order.indexOf(current))) reg.meta.default_sensitivity = next;
+  reg.meta.sensitive_globs = [...new Set([...(reg.meta.sensitive_globs || []), ...rules.sensitivity.globs])];
 }
 
 // Planned pools for one family: configured plan ids (first = default); a custom id gets conservative catalog defaults.

@@ -131,6 +131,8 @@ No secrets, no `.env` contents, no conversation history. Workers never commit, p
 Reports from workers are ≤ 15 lines (reviews: verdict + findings only). The main session never opens a large file a subagent could summarise, and test/build output goes through `orch-runner`.
 Fix rounds reuse the worker's session (`--resume-of` / `--resume-session`) instead of re-sending context.
 
+Repo profile (`/orchestrator:init`, `references/repo-init.md`): paths it declares critical raise a task's `risk` to high in the router (so the security lens applies) and flag the request in triage; its sensitivity default is the baseline for `sensitivity`. Precedence: profile > the repo's own rules > these defaults.
+
 ## 10. Spec path (complex): `prompt-creator`
 Routed like any subtask as type `spec` (family claude, complexity M, risk low): the router picks the cheapest tier that clears the suitability floor. Light-tier models score `spec: 2`, below the floor of 3 (a spec needs repo reading and judgment), so today it resolves to a standard model at medium effort; `tier_bounds` caps it at standard because a spec is not an architecture decision. Heavy tier only on escalation, with justification.
 - Brief: the user's request verbatim, `run_dir`, repo, triage flags, `rounds_used`, earlier answers. Output: `prompt.md` in the run directory plus a JSON summary.

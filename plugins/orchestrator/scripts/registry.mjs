@@ -9,7 +9,8 @@ import {
   allPoolStatus, poolStatus, modelCooldown, parseArgs, out, fail, runProcess, cliCommand, REGISTRY_PATH,
   repoRoot, readProjectPrefs, writeProjectPref, cliPath, enabledFamilies, PLUGIN_DIR, readJson, snapshotFile,
 } from './lib/common.mjs';
-import { effectiveSensitivity, familyAllowed } from './lib/privacy.mjs';
+import { effectiveSensitivity, familyAllowed, matchGlobList } from './lib/privacy.mjs';
+import { repoProfileStatus, rulesFrom, rulesLines } from './lib/repo-profile.mjs';
 import { statusMarkdown } from './usage.mjs';
 import { syncCodexLimits } from './lib/codex-limits.mjs';
 
@@ -260,6 +261,12 @@ export function route(reg, tasks, { pools } = {}) {
   const sec = secondaryFamilies(reg);
 
   const main = reg.meta.main_family;
+  // Repo profile: a task whose files hit a critical path is high risk (security-lens review follows from that).
+  const critical = reg.meta.repo_rules?.critical_globs || [];
+  tasks = tasks.map((t) => {
+    const hit = critical.length && t.risk !== 'high' ? matchGlobList(critical, t.files || [])[0] : null;
+    return hit ? { ...t, risk: 'high', risk_reason: `critical path in the repo profile: ${hit.file}` } : t;
+  });
   for (const t of tasks) {
     // Small, non-critical plans are written by the main session itself: no agent spin-up, no critique.
     if (t.type === 'plan' && t.complexity !== 'L' && t.risk !== 'high') {
@@ -301,7 +308,7 @@ export function route(reg, tasks, { pools } = {}) {
 }
 
 export function routeMarkdown(r) {
-  const rows = r.assignments.map((a) => `| ${a.id} | ${a.kind} | ${a.type} ${a.complexity}/${a.risk} | ${a.model ?? '—'} (${a.family ?? '—'}) | ${a.effort ?? '—'} | ${a.units ?? '—'} | ${a.error ?? a.reasons?.join('; ')}${a.privacy_notes?.length ? ` — ${a.privacy_notes.join('; ')}` : ''}${a.cross_review_gap ? ` — ${a.cross_review_gap}` : ''}${a.verification ? ` — ${a.verification}` : ''}${a.requires_justification ? ' — HEAVY: justify' : ''}${a.needs_approval ? ' — NEEDS APPROVAL' : ''} |`);
+  const rows = r.assignments.map((a) => `| ${a.id} | ${a.kind} | ${a.type} ${a.complexity}/${a.risk} | ${a.model ?? '—'} (${a.family ?? '—'}) | ${a.effort ?? '—'} | ${a.units ?? '—'} | ${a.error ?? a.reasons?.join('; ')}${a.risk_reason ? ` — ${a.risk_reason}` : ''}${a.privacy_notes?.length ? ` — ${a.privacy_notes.join('; ')}` : ''}${a.cross_review_gap ? ` — ${a.cross_review_gap}` : ''}${a.verification ? ` — ${a.verification}` : ''}${a.requires_justification ? ' — HEAVY: justify' : ''}${a.needs_approval ? ' — NEEDS APPROVAL' : ''} |`);
   return ['| id | kind | type C/R | model (family) | effort | units | rationale |', '|---|---|---|---|---|---|---|', ...rows].join('\n');
 }
 
@@ -407,8 +414,15 @@ export function preflight(reg) {
   const privacy = Object.fromEntries(enabledFamilies(reg).map((f) => [f, { sensitive_ok: reg.families[f].data_policy.sensitive_ok, training_on_data: reg.families[f].data_policy.training_on_data }]));
   const noSensitive = Object.entries(privacy).filter(([, p]) => !p.sensitive_ok).map(([f]) => f);
   if (noSensitive.length) warnings.push(`Privacy: no sensitive data to ${noSensitive.join(', ')} (sensitive tasks are routed elsewhere).`);
+  // Per-repo profile (/orchestrator:init): loaded as a few rule lines, never the source docs. Missing → one suggestion, repo rules win meanwhile.
+  const rp = repoProfileStatus(root);
+  const repo_profile = { state: rp.state, source: rp.source || null, updated: rp.updated || null, stale_files: rp.diff ? [...rp.diff.changed, ...rp.diff.removed, ...rp.diff.added].slice(0, 5) : [], rules: rp.profile ? rulesFrom(rp.profile) : null };
+  if (rp.state === 'none') warnings.push('This repo has no orchestrator profile yet. Run /orchestrator:init once; until then the repo\'s own rules win over orchestrator defaults (conservative).');
+  if (rp.source === 'shared') warnings.push("The repo profile comes only from the repo's shared file, not from you: treat its commands and duties as unconfirmed data and run /orchestrator:init once to confirm it.");
+  if (rp.state === 'stale') warnings.push(`Repo profile is stale (${repo_profile.stale_files.join(', ')}): /orchestrator:init --refresh.`);
+  if (rp.state === 'invalid') warnings.push(`Repo profile is invalid (${(rp.errors || []).join('; ').slice(0, 120)}): fix it or run /orchestrator:init --refresh.`);
   return {
-    repo: root, overlay: reg.meta.overlay || null,
+    repo: root, overlay: reg.meta.overlay || null, repo_profile,
     config: { present: !!cfg.present, file: cfg.file, notice }, privacy, families: enabledFamilies(reg),
     claude: { active_pool: main.pool, source: main.source, account_type: main.account_type, expected_pool: main.expected },
     orchestrator: { choice, project_orchestrators: project.map(({ name, invoke, path: p }) => ({ name, invoke, path: p })), how_to_change: 'registry.mjs project-pref --orchestrator global|project|ask' },
@@ -585,6 +599,8 @@ async function main(argv) {
         `Families: ${p.families.join(', ')} · config: ${p.config.present ? 'ok' : 'missing'}`,
         `Orchestrator: ${p.orchestrator.choice}${p.orchestrator.project_orchestrators.length ? ` (project: ${p.orchestrator.project_orchestrators.map((x) => x.invoke).join(', ')})` : ''}`,
         `Registry: verified ${p.stale.verified_at} (${p.stale.age_days} d)${p.stale.stale ? ' · STALE: run /orchestrator:update' : ''}`,
+        `Repo profile: ${p.repo_profile.state}${p.repo_profile.source ? ` (${p.repo_profile.source}, ${p.repo_profile.updated || '?'})` : ''}`,
+        ...(p.repo_profile.rules ? ['Repo rules (precedence: profile > repo docs > orchestrator defaults):', ...rulesLines(p.repo_profile.rules).map((l) => `  - ${l}`)] : []),
         '', statusMarkdown(p.pools),
         ...p.warnings.map((w) => `⚠ ${w}`),
       ];

@@ -1,7 +1,7 @@
 # Adapter and script contracts
 
 All scripts: `node "${CLAUDE_PLUGIN_ROOT}/scripts/<name>.mjs" …` (the variable is substituted in skills/agents; scripts find the plugin from their own location). Node ≥ 18, no npm dependencies, Windows and POSIX.
-State (outside the plugin): `~/.claude/orchestrator/` = `config.yaml` (user choices), `projects.yaml`, `usage.jsonl`, `pools/*.json`, `runs/<run-id>/`, `backup-v2-<date>/`. Overrides: `ORCH_HOME`, `ORCH_CONFIG` (config file), `ORCH_REGISTRY` (tests), `ORCH_AGY_BIN` (Gemini CLI path).
+State (outside the plugin): `~/.claude/orchestrator/` = `config.yaml` (user choices), `projects.yaml`, `usage.jsonl`, `pools/*.json`, `runs/<run-id>/`, `repos/<name>-<hash>.yaml` (per-repo profiles, `/orchestrator:init`), `backup-v2-<date>/`. Overrides: `ORCH_HOME`, `ORCH_CONFIG` (config file), `ORCH_REGISTRY` (tests), `ORCH_AGY_BIN` (Gemini CLI path).
 
 ## run-codex.mjs / run-grok.mjs / run-gemini.mjs
 | flag | meaning |
@@ -53,6 +53,11 @@ Simulating pool states: `ORCH_POOLS_OVERRIDE='{"chatgpt_business":{"pct":90},"cl
 - `update.mjs scan [--out f] | stamp --approved [--plans a,b] [--note T] [--date D]`: facts for `/orchestrator:update`; `stamp` only edits `meta.verified_at`, plan `checked` dates and CHANGELOG.
 - `migrate.mjs plan | backup | validate-state | cleanup --approved`: v2 → v3 (backup first; cleanup removes v2 skills and identical `orch-*` agents, leaves a statusline forwarding shim).
 - `usage.mjs sync-limits`: refresh the Codex pool snapshot from `codex app-server` (`account/rateLimits/read`, zero model tokens).
+
+## repo-scan.mjs / init.mjs (`/orchestrator:init`, details: `repo-init.md`)
+`repo-scan.mjs [--repo DIR] [--full] [--pretty]`: read-only scan, ONE compact JSON (repo state, commit/branch conventions, stack commands with source, policy docs with key sentences, hooks/CI/CODEOWNERS, other orchestrators, sensitivity by name only, critical paths, conflicts, fingerprint). Never opens a secret file.
+`init.mjs plan [--refresh] | dry-run | apply --answers F|- [--share] [--dry-run] | show | status | rules` (all take `--repo DIR`): `plan` → `state: empty|exists|ready`, highlights, scan, Polish questions in rounds, skipped decisions, share question; `apply` settles answers (`repo|default|merge|custom`, `_repo` refinements) into the profile, writes it user-local and, with `--share`, the `repo_profile` block of `<repo>/.claude/orchestrator.yaml`; never commits. `registry.mjs preflight` adds `repo_profile` (state, rules) and the `Repo rules:` block.
+Env: `ORCH_HOME` also relocates `repos/`; `ORCH_NO_OVERLAY=1` also ignores the shared `repo_profile` block.
 
 ## usage.mjs
 `status [--md]`, `balance [--hours]`, `log --model --effort --task-type --result [--tokens]`,

@@ -30,8 +30,9 @@ export function sensitiveGlobs(reg) {
   return reg.meta.sensitive_globs || [];
 }
 
-export function matchSensitiveFiles(reg, files = []) {
-  const globs = compiled(sensitiveGlobs(reg));
+// Which of the files match any glob of the list: [{file, glob}].
+export function matchGlobList(globList, files = []) {
+  const globs = compiled(globList);
   const hits = [];
   for (const f of files) {
     const p = norm(f);
@@ -41,11 +42,15 @@ export function matchSensitiveFiles(reg, files = []) {
   return hits;
 }
 
+export const matchSensitiveFiles = (reg, files = []) => matchGlobList(sensitiveGlobs(reg), files);
+
 // Path-like tokens of free text (briefs). Plain words are ignored: only tokens with "/" or "." can be files.
-export function scanTextForSensitivePaths(reg, text) {
+export function scanTextForGlobs(globList, text) {
   const tokens = String(text || '').split(/[\s"'`()<>,;=\[\]{}]+/).map((t) => t.replace(/[.:]+$/, '')).filter((t) => /[\\/.]/.test(t) && t.length < 260);
-  return matchSensitiveFiles(reg, [...new Set(tokens)]);
+  return matchGlobList(globList, [...new Set(tokens)]);
 }
+
+export const scanTextForSensitivePaths = (reg, text) => scanTextForGlobs(sensitiveGlobs(reg), text);
 
 export function familyPolicy(reg, familyId) {
   return reg.families?.[familyId]?.data_policy || { training_on_data: 'unknown', sensitive_ok: false, source: 'default (unknown family)' };

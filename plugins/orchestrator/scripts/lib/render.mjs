@@ -122,7 +122,7 @@ export function reviewLine(r) {
 
 export function renderReport(data) {
   const [icon, label] = RESULT[data.result] || RESULT.partial;
-  const text = renderTemplate(loadTemplate('report'), { ...data, icon, label, reviews: (data.reviews || []).map((r) => (typeof r === 'string' ? r : reviewLine(r))), fallbacks: [].concat(data.fallbacks || []).join('; ') || 'brak', pool: data.pool || 'brak danych' });
+  const text = renderTemplate(loadTemplate('report'), { ...data, icon, label, reviews: (data.reviews || []).map((r) => (typeof r === 'string' ? r : reviewLine(r))), fallbacks: [].concat(data.fallbacks || []).join('; ') || 'brak', pool: data.pool || 'brak danych', no_commits: data.no_commits || 'brak' });
   const lines = text.split('\n').length;
   return { text, lines, over_cap: lines > REPORT_LINE_CAP, cap: REPORT_LINE_CAP };
 }

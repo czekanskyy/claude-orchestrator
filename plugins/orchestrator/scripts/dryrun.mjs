@@ -13,7 +13,7 @@ import { addRoute, assignmentTable } from './lib/render.mjs';
 
 export function dryRun(reg, text, { tasks, pools } = {}) {
   const t = triage(text, reg);
-  const gate = egmGate({ critical: t.critical });
+  const gate = egmGate({ critical: t.critical, setting: reg.meta.repo_rules?.egm });
   const ledger = { rows: [], counters: {} };
   const blocks = [];
   const showWaves = (r, label) => {
@@ -41,7 +41,7 @@ export function dryRun(reg, text, { tasks, pools } = {}) {
     `Path: ${t.class} (confidence ${t.confidence}) · sensitivity ${t.sensitivity} · critical ${t.critical} · risk hint ${t.risk_hint}`,
     `Reasons: ${t.reasons.join('; ')}`,
     `Flow: ${flow}`,
-    `egm_gate: ${gate.action} (critical=${gate.critical}, triage flag=${gate.candidate})`,
+    `egm_gate: ${gate.action} (critical=${gate.critical}, triage flag=${gate.candidate}, repo setting=${gate.setting})`,
     ...blocks.flatMap((b) => ['', `${b.label}`, b.table]),
     '', 'Model calls: 0',
   ].join('\n');
