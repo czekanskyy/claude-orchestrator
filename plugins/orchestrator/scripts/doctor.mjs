@@ -140,7 +140,7 @@ function checkAdapters(reg) {
     }
     add(`${f} adapter`, problems.length ? 'fail' : 'ok', problems.length ? problems.join('; ') : `${script}: simulate, dry-run${f === 'gemini' ? ', mock run, resume, error mapping, privacy gate' : ''} pass`, problems.length ? 'reinstall the plugin / report a bug' : '');
   }
-  fs.rmSync(tmp, { recursive: true, force: true });
+  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* temp dir only */ }
 }
 
 // Fixture plan through the real router with the user's effective config: privacy filter + subagent assignment.
@@ -167,7 +167,9 @@ function checkRouting(reg) {
 
 // ---------------------------------------------------------------- live checks
 function checkLive(reg, a) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-live-'));
+  // Fixed, reused workspace: a Codex app-server broker may keep a handle on its cwd (Windows), so it is never deleted.
+  const tmp = path.join(os.tmpdir(), 'orch-doctor-live');
+  fs.mkdirSync(tmp, { recursive: true });
   const brief = path.join(tmp, 'brief.md');
   fs.writeFileSync(brief, 'Reply with exactly: OK\n');
   let tokens = 0;
@@ -188,7 +190,6 @@ function checkLive(reg, a) {
     else if (cl) add('claude live', 'fail', `subagent dispatch failed: ${String(cl).replace(/^fail:/, '')}`, 'claude plugin list; reinstall the plugin');
     else add('claude live', 'warn', 'subagent dispatch not run (use /orchestrator:doctor --live)');
   }
-  fs.rmSync(tmp, { recursive: true, force: true });
   return tokens;
 }
 

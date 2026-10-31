@@ -468,7 +468,7 @@ models:
   gemini-3.8-flash:
     family: gemini
     tier: standard
-    status: unverified
+    status: active
     invoke: gemini
     cli_model: gemini-3.8-flash
     speed: fast
@@ -481,7 +481,7 @@ models:
     tools: {edit: true, shell: false, web: true}
     strengths: "Fast, cheap, large-context Flash model. Research, extra review rounds, simple tasks."
     weaknesses: "Not verified for hard debugging. Consumer plans: no sensitive data. Shell commands are denied unless allowed in agy settings."
-    note: "Status stays unverified until `doctor --live` succeeds once (agy 1.4.12 installed and logged in on the dev machine, 2026-10-31)."
+    note: "Promoted to active after `doctor --live` answered through agy 1.4.12 on 2026-10-31 (~8k tokens per call, mostly CLI overhead)."
     suitability: {implement: 3, refactor: 3, debug: 3, test: 3, review: 3, plan: 3, research: 4, mechanical: 3}
     verified_at: "2026-10-31"
     sources:

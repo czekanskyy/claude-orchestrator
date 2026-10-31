@@ -129,8 +129,8 @@ function fallback() {
   log(`next call    -> ${again.error_kind}; next: ${JSON.stringify(again.fallback_hint)}`);
   check('fallback', 'adapter refuses calls into a cooled-down pool (no CLI call)', again.error_kind === 'pool_cooldown' && again.fallback_hint?.family !== 'gpt');
 
-  const both = runAdapter('run-grok.mjs', ['--model', 'grok-4.7', '--effort', 'low', ...common4, '--simulate', 'rate_limit'], { ORCH_POOLS_OVERRIDE: JSON.stringify({ claude_team: { cooldown: true }, claude_pro: { cooldown: true } }) });
-  log(`grok limit with Claude+GPT down -> next: ${JSON.stringify(both.fallback_hint)}`);
+  const both = runAdapter('run-grok.mjs', ['--model', 'grok-4.7', '--effort', 'low', ...common4, '--simulate', 'rate_limit'], { ORCH_POOLS_OVERRIDE: JSON.stringify({ claude_team: { cooldown: true }, claude_pro: { cooldown: true }, gemini_ai_pro: { cooldown: true } }) });
+  log(`grok limit with every other pool down -> next: ${JSON.stringify(both.fallback_hint)}`);
   check('fallback', 'all pools exhausted -> stop', both.fallback_hint?.step === 'stop');
   log(`usage.jsonl rows: ${common.readUsage().length}`);
 }
