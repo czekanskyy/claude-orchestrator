@@ -1,15 +1,15 @@
 # Changelog: orchestrator registry
 
-## Unreleased: exact Gemini quota
+## 2026-10-31: exact Gemini quota
 - Gemini pool measurement `agy-usage`: `agy -p /usage --output-format json` returns the 5h and weekly limits (zero model tokens); `usage.mjs sync-limits`, the doctor (`gemini limits` row), preflight and the auto supervisor refresh it. The plans gain a 7d window (estimate budgets only as fallback). Source: user correction 2026-10-31, verified live.
 
-## Unreleased: `/orchestrator:auto` (autonomous mode)
+## 2026-10-31: `/orchestrator:auto` (autonomous mode)
 - New skill `auto` (user-triggered only): start contract (prompt-creator in strict mode, ≤ 3 AskUserQuestion rounds, allowlist shown for approval, feasibility estimate, preflight, explicit GO), then an external supervisor (`scripts/auto-supervisor.mjs`: guardian + engine, single-instance lock, heartbeat + watchdog, keep-awake, STOP/PAUSE/TAKEOVER/ABORT files) works in a dedicated worktree on `auto/<id>` with checkpoint commits and tags. Never a push, never main, no bypass-permissions (`dontAsk` + a generated narrow allowlist). Subcommands: start, status, report, review, pause, continue, stop, takeover, abort.
 - Limits: exact 5h/weekly tracking for Claude from `rate_limit_event`, Codex via app-server, Grok/Gemini estimates (soft only); soft/hard thresholds with a reserve, wait for the reset instead of failing, reroute (privacy permitting), never switch accounts or use overage; external failures wait with zero-token probes.
 - Decisions: confidence protocol with cross-family second opinion, `decisions.jsonl` with undo commands, diff guard, loop protection. Files-only output (`journal.md`, `decisions.jsonl`, `parked.md`, `limits.log`, `report.md`); morning `review` reverts per item on the auto branch, merge only on an explicit yes. Generic notifications (os / file / command).
 - Integration: preflight `auto` block and a second-run block; doctor `auto *` rows; configure stores `auto:` thresholds and notification channel; `egm_gate` honors the contract's pre-consent. Detail: `references/autonomous.md`; tests: `selftest.mjs auto`, `scripts/auto-smoke.mjs`.
 
-## Unreleased: `/orchestrator:init` (per-repo profile)
+## 2026-10-31: `/orchestrator:init` (per-repo profile)
 - New skill `init` (user-triggered only: `disable-model-invocation`): one-time setup of an existing, non-empty repo. `scripts/repo-scan.mjs` (read-only, zero tokens, one compact JSON, secret files by name only), `scripts/init.mjs` (`plan`, `dry-run`, `apply`, `show`, `status`, `rules`), Polish interview (≤ 4 questions per call, ≤ 3 rounds, only real conflicts, recommendation = the repo's rule). `--refresh` re-asks only what changed; `--dry-run` writes nothing.
 - Profile stored user-local in `~/.claude/orchestrator/repos/` keyed by repo identity (remote, else path); optional shareable `repo_profile:` block in `<repo>/.claude/orchestrator.yaml` (separate question, never committed). v2 `projects.yaml` untouched; the orchestrator choice still lives there. A fingerprint of the source docs detects staleness.
 - Consumption: preflight prints a `Repo rules:` block (or one line suggesting init); commit policy/format/attribution, docs duties, verification commands and definition of done reach briefs, runner checks and the final report; critical paths force `risk: high` (router) and flag triage; the repo sensitivity default is the privacy baseline; EGM setting reaches `egm_gate`. Precedence: profile > repo rules > defaults (`references/repo-init.md`).
@@ -35,7 +35,7 @@
 
 ## 2026-10-27: initial version
 - Registry: Claude (haiku/sonnet/opus 5.5), GPT (gpt-6-luna, gpt-6.1-terra [unverified], gpt-6.1-sol, gpt-6-astra), Grok (grok-4.7 [unverified], grok-4.6, grok-4.5).
-- Excluded: Fable (not available on the user's Pro plan), gpt-daybreak-* / codex-auto-review (hidden variants).
+- Excluded: Fable (not available on the maintainer's Pro plan), gpt-daybreak-* / codex-auto-review (hidden variants).
 - Pools: Claude Pro (exact via statusline), ChatGPT Plus (estimates; official 5h ranges), SuperGrok legacy (estimates/manual).
 - Codex adapter built on codex-plugin-cc 1.0.6 (codex-companion), with a `codex exec` fallback. Own Grok adapter (the plugin always uses --always-approve).
 - Sources: see `references/*.md` (checked 2026-10-27).
@@ -51,7 +51,7 @@
 - `registry.mjs preflight` (one call: repo, subscription, orchestrator choice, staleness, pools, warnings) and `project-pref` (user-local per-repo `orchestrator: global|project|ask`, `claude_pool`) in `~/.claude/orchestrator/projects.yaml`, outside the repo.
 - SKILL: `--use global|project`. In repos with their own orchestrator the saved choice decides; the repo's own rules still apply under the global one.
 
-## 2026-10-28: best of v1 (body-work.pl orchestrator) merged in
+## 2026-10-28: best of v1 (an earlier repo-specific orchestrator) merged in
 - Tier by role: workers (implement/refactor/test/debug/mechanical/research) max standard tier; heavy only for review/plan or escalation.
 - Escalation ladder: effort +1 → other primary family (same tier) → heavy (justified) → stop.
 - Context economy: `context_heavy` → outside the main family, `interactive` → main family (new `meta.main_family`).

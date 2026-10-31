@@ -1,0 +1,28 @@
+# User state and run data never belong in the repo (the plugin keeps them in ~/.claude/orchestrator/)
+.claude/orchestrator.yaml.bak
+.claude/settings.local.json
+orchestrator-runs/
+*.bak
+*.tmp
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+service-account*.json
+
+# Dependencies, caches, build output
+node_modules/
+.cache/
+dist/
+coverage/
+
+# Editor and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp

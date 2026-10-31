@@ -19,7 +19,7 @@ const DOCS = ['readme', 'documentation', 'dokumentac', 'changelog', 'license', '
 const DOC_FILE = /\.(md|txt|rst)$/i;
 
 const stemRe = (s) => new RegExp(`(?<![\\p{L}\\p{N}_])${s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}`, 'iu');
-const hits = (text, list) => list.filter((s) => stemRe(s).test(text));
+export const hits = (text, list) => list.filter((s) => stemRe(s).test(text));
 
 export function features(text) {
   const t = String(text || '');

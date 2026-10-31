@@ -120,6 +120,20 @@ export function buildReport(paths, { final = false, now = Date.now() } = {}) {
   if (!st.reviews?.length) L.push('Brak recenzji (zadania zwolnione z recenzji lub brak drugiej rodziny).');
   else for (const r of st.reviews) L.push(`- ${r.task === '*' ? 'całość' : r.task} (${r.lens}, runda ${r.round}): ${r.by} → ${r.of}: ${r.verdict}, ${r.high} wys. / ${r.med} śr. / ${r.low} nisk.${r.fixed ? `, naprawiono ${r.fixed}` : ''}`);
 
+  // EGM (only tasks that went through the gate with a real outcome)
+  const egmTasks = st.tasks.filter((t) => t.egm && t.egm.status !== 'skipped');
+  if (egmTasks.length) {
+    L.push('', '## EGM (projekt i recenzje Goldfish dla zadań krytycznych)');
+    for (const t of egmTasks) {
+      const e = t.egm;
+      const c = e.counts || {};
+      const base = `**${esc(t.id)}** ${e.status === 'done' ? '✅' : e.status === 'failed' ? '⚠️' : '🔄'}`;
+      if (e.status !== 'done') { L.push(`- ${base} ${e.status === 'failed' ? `nie powiodło się: ${esc(e.reason || 'nieznany powód')}` : 'w toku'}`); continue; }
+      const drift = e.drift ? (e.drift.skipped ? `pominięty (${esc(e.drift.skipped)})` : `${e.drift.items} rozbież.${e.drift.fixed ? `, naprawiono ${e.drift.fixed}` : ''}`) : 'nie sprawdzano';
+      L.push(`- ${base} projekt \`${esc(e.design_file || '')}\`${e.files_listed ? ` (${e.files_listed} plików w planie)` : ''}; Goldfish: ${c.blocker || 0} bloker. / ${c.major || 0} poważnych / ${c.nit || 0} drobnych${e.resolve ? `, naprawiono ${e.resolve.applied}, zakwestionowano ${e.resolve.contested}` : ''}${c.not_run?.length ? `; NIE uruchomiono: ${c.not_run.join(', ')}` : ''}; dryf: ${drift}`);
+    }
+  }
+
   // limits
   L.push('', '## Limity i przekierowania');
   L.push(`- trafienia w limit: ${lim.limit_hits}; oczekiwania: ${lim.waits} (łącznie ${fmtDur(lim.minutes * 60000)}); przekierowania do innych rodzin: ${st.events?.reroutes ?? 0}; eskalacje: ${st.events?.escalations ?? 0}`);

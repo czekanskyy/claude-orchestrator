@@ -8,7 +8,12 @@ import { parseYaml } from './yaml-lite.mjs';
 export const CONFIG_SCHEMA_VERSION = 1;
 export const CONFIG_FILE = process.env.ORCH_CONFIG || path.join(process.env.ORCH_HOME || path.join(os.homedir(), '.claude', 'orchestrator'), 'config.yaml');
 
-const TOP_KEYS = ['schema_version', 'main_family', 'families', 'defaults', 'privacy', 'auto', 'updated'];
+const TOP_KEYS = ['schema_version', 'main_family', 'families', 'defaults', 'privacy', 'auto', 'egm', 'updated'];
+// Elephant-Goldfish mode (lib/egm.mjs): ask = propose it for critical tasks, off = never; review = which official review preset; goldfish = who reviews.
+export const EGM_MODES = ['ask', 'off'];
+export const EGM_REVIEWS = ['full', 'feature', 'plan'];
+export const EGM_GOLDFISH = ['claude', 'cross'];
+export const EGM_KEYS = ['mode', 'review', 'goldfish'];
 export const AUTO_LIMIT_KEYS = ['soft_pct', 'hard_pct', 'weekly_soft_pct', 'weekly_hard_pct', 'reserve_pct', 'safety_margin_min'];
 export const AUTO_NOTIFY_CHANNELS = ['os', 'file', 'command', 'none'];
 const FAMILY_KEYS = ['enabled', 'plans', 'data_policy'];
@@ -100,6 +105,17 @@ export function validateConfig(cfg, families) {
       }
     }
   }
+  if (cfg.egm !== undefined) {
+    // "egm: ask|off" or a map { mode, review, goldfish }
+    if (typeof cfg.egm === 'string') { if (!EGM_MODES.includes(cfg.egm)) errors.push(`egm must be ${EGM_MODES.join('|')} (or a map with mode/review/goldfish)`); }
+    else if (!isObj(cfg.egm)) errors.push('egm must be ask|off or a map');
+    else {
+      for (const k of Object.keys(cfg.egm)) if (!EGM_KEYS.includes(k)) errors.push(`egm: unknown key "${k}"`);
+      if (cfg.egm.mode !== undefined && !EGM_MODES.includes(cfg.egm.mode)) errors.push(`egm.mode must be ${EGM_MODES.join('|')}`);
+      if (cfg.egm.review !== undefined && !EGM_REVIEWS.includes(cfg.egm.review)) errors.push(`egm.review must be ${EGM_REVIEWS.join('|')}`);
+      if (cfg.egm.goldfish !== undefined && !EGM_GOLDFISH.includes(cfg.egm.goldfish)) errors.push(`egm.goldfish must be ${EGM_GOLDFISH.join('|')}`);
+    }
+  }
   const walk = (v, p) => {
     if (typeof v === 'string' && SECRET_VALUE.test(v)) errors.push(`${p}: looks like a secret; config must not store secrets`);
     else if (isObj(v)) for (const [k, x] of Object.entries(v)) { if (SECRET_KEY.test(k)) errors.push(`${p}.${k}: secret-like key; config must not store secrets`); walk(x, `${p}.${k}`); }
@@ -108,6 +124,9 @@ export function validateConfig(cfg, families) {
   walk(cfg, 'config');
   return { ok: errors.length === 0, errors, warnings };
 }
+
+// "egm: off" and "egm: {mode: off}" mean the same; the map form is the canonical in-memory shape.
+export const normalizeEgm = (v) => (typeof v === 'string' ? { mode: v } : isObj(v) ? { ...v } : {});
 
 const scalar = (v) => (typeof v === 'string' ? JSON.stringify(v) : String(v));
 const list = (a) => `[${a.map(scalar).join(', ')}]`;
@@ -136,6 +155,11 @@ export function serializeConfig(cfg) {
     L.push('auto:');
     if (cfg.auto.limits) { L.push('  limits:'); for (const [k, v] of Object.entries(cfg.auto.limits)) L.push(`    ${k}: ${scalar(v)}`); }
     if (cfg.auto.notify) { L.push('  notify:'); for (const [k, v] of Object.entries(cfg.auto.notify)) if (v !== null && v !== undefined) L.push(`    ${k}: ${scalar(v)}`); }
+  }
+  if (cfg.egm !== undefined) {
+    const e = normalizeEgm(cfg.egm);
+    if (e.review === undefined && e.goldfish === undefined) L.push(`egm: ${scalar(e.mode ?? 'ask')}`);
+    else L.push('egm:', ...EGM_KEYS.filter((k) => e[k] !== undefined).map((k) => `  ${k}: ${scalar(e[k])}`));
   }
   if (cfg.updated) L.push(`updated: ${scalar(cfg.updated)}`);
   return `${L.join('\n')}\n`;

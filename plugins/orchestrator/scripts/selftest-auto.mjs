@@ -233,4 +233,5 @@ export async function autoScenario(ctx) {
   const helpers = { mkRepo, setupRun, mkClock, mkWorld, mkDeps, mkEngine, st, decisions, autoCommits, setLimits, sh, T0, H, PLAN, reg, readLog, claudeWork, adapterWork, merge, S, check, TMP, HERE, common, core, lim, dec, con, eng, rep, sys, wrk, cli };
   await (await import('./selftest-auto-more.mjs')).moreScenarios(helpers);
   await (await import('./selftest-auto-units.mjs')).unitScenarios(helpers);
+  await (await import('./selftest-egm.mjs')).egmAutoScenario(helpers);
 }

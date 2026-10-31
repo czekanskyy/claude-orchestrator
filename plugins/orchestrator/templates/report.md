@@ -15,6 +15,8 @@
 ### Review innych modeli
 {{#reviews}}- {{.}}
 {{^reviews}}- nie dotyczy
+{{#egm_head}}### EGM
+{{#egm}}- {{.}}
 ### Fallbacki i pule
 - **Fallbacki:** {{fallbacks}}
 - **Pule:** {{pool}}

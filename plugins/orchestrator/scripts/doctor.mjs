@@ -18,6 +18,9 @@ import { validate, staleCheck, route, projectOrchestrators } from './registry.mj
 import { statusMarkdown } from './usage.mjs';
 import { keepAwakeCapability } from './lib/auto-system.mjs';
 import { autoRunFor } from './lib/auto-core.mjs';
+import { egmStatus, readEgmSettings, estimateEgm, egmRubric, EGM_INSTALL_HINT } from './lib/egm.mjs';
+import { egmGate } from './egm-gate.mjs';
+import { egmScan } from './update.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, 'fixtures');
@@ -233,6 +236,41 @@ function checkAuto(reg) {
   for (const r of autoRows(reg)) add(r.area, r.status, r.detail, r.fix);
 }
 
+// EGM (Elephant-Goldfish mode, optional): plugin present and complete, our agent and gate wiring, drift against the tested version.
+// Offline, zero tokens. Pure: returns the doctor rows [{area, status, detail, fix}] (also called by the selftest).
+export function egmRows(reg, status = egmStatus()) {
+  const rows = [];
+  const row = (area, st, detail, fix = '') => rows.push({ area, status: st, detail, fix });
+  const settings = readEgmSettings(reg);
+  if (!status.present) {
+    row('egm plugin', 'warn', `not installed (optional): EGM mode is unavailable, critical tasks use the normal flow${settings.mode === 'off' ? ' (egm is off anyway)' : ''}`, `${EGM_INSTALL_HINT}  (or set egm: off in /orchestrator:configure)`);
+    return rows;
+  }
+  if (!status.ok) row('egm plugin', 'warn', `egm ${status.version || '?'} is incomplete, missing: ${status.missing.slice(0, 4).join(', ')}`, `reinstall: claude plugin uninstall egm@egm && ${EGM_INSTALL_HINT}`);
+  else {
+    const other = Object.entries(status.other_harnesses).filter(([, v]) => v).map(([k]) => k);
+    row('egm plugin', 'ok', `egm ${status.version || '?'}: ${Object.keys(status.skills).length} skills, ${Object.keys(status.personas).length} reviewer personas and the standards are reachable${other.length ? `; also installed for ${other.join(', ')} (not driven by the orchestrator)` : ''}`);
+  }
+  const scan = egmScan(reg);
+  if (scan.drift) row('egm drift', 'warn', scan.version_changed ? `installed ${scan.installed_version}, the briefs were written against ${scan.tested_version}${scan.changed.length ? `; changed: ${scan.changed.slice(0, 3).join(', ')}` : ''}` : `EGM skills/docs changed since the last verification: ${[...scan.changed, ...scan.added, ...scan.removed].slice(0, 3).join(', ')}`, '/orchestrator:update');
+  const agent = fs.existsSync(path.join(PLUGIN_DIR, 'agents', 'egm-elephant.md'));
+  // gate self-check on fixtures: a critical sample asks for consent (never runs), a trivial one continues, "off" and --egm behave
+  const sample = 'Redesign the payments architecture: migrate the billing schema and add auth roles across the api, web and worker modules';
+  const crit = egmGate({ class: 'complex', text: sample, reg, status });
+  const calm = egmGate({ class: 'simple', text: 'Fix the typo in README.md', reg, status });
+  const gateOk = crit.action === (settings.mode === 'off' ? 'continue' : status.ok ? 'ask' : 'continue') && calm.action === 'continue' && !(crit.action === 'egm');
+  row('egm gate', agent && gateOk ? 'ok' : 'fail', agent && gateOk ? `egm: ${settings.mode}${settings.off_by ? ` (${settings.off_by})` : ''} · review ${settings.review} · Goldfish ${settings.goldfish}; sample critical task → ${crit.action}, trivial → ${calm.action}; no run without consent` : `${agent ? '' : 'agents/egm-elephant.md missing; '}${gateOk ? '' : `gate self-check failed (critical → ${crit.action}, trivial → ${calm.action})`}`, 'reinstall the plugin / report a bug');
+  if (status.ok && settings.mode !== 'off') {
+    const est = estimateEgm(reg, { review: settings.review, crossFamily: settings.goldfish === 'cross' });
+    row('egm cost', est.ok ? 'ok' : 'warn', est.ok ? est.summary : (est.errors || [est.error]).slice(0, 2).join('; '), est.ok ? '' : 'EGM needs the Claude family enabled: /orchestrator:configure');
+  }
+  return rows;
+}
+
+function checkEgm(reg) {
+  for (const r of egmRows(reg)) add(r.area, r.status, r.detail, r.fix);
+}
+
 // ---------------------------------------------------------------- live checks
 function checkLive(reg, a) {
   // Fixed, reused workspace: a Codex app-server broker may keep a handle on its cwd (Windows), so it is never deleted.
@@ -273,6 +311,7 @@ export async function doctor(a = {}) {
   checkAdapters(reg);
   checkRouting(reg);
   checkAuto(reg);
+  checkEgm(reg);
   const adapterTokens = a.live ? checkLive(reg, a) : 0;
   const claudeTokens = Number(a['claude-tokens'] || 0);
   const pools = allPoolStatus(reg);

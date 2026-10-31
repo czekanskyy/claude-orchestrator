@@ -239,11 +239,13 @@ function shellRules(contract) {
   return `Shell: only these commands are permitted, each as its own Bash call (no cd, &&, ;, pipes or redirects): ${[...cmds, 'git status', 'git diff', 'git log', 'git show'].join(' | ')}. Everything else is denied; do not retry variants of a denied command. The supervisor runs all checks itself after you finish, so a denied or skipped check is not a reason to report "partial": finish the work and report "done".`;
 }
 
-export function taskPrompt({ contract, task, decisions = [], failure = null, resumeNote = null, rules }) {
+export function taskPrompt({ contract, task, decisions = [], failure = null, resumeNote = null, rules, design = null }) {
   return [
     resumeNote ? `${resumeNote}\n` : '',
     `Task ${task.id}: ${task.title}`,
     contractBrief(contract, rules),
+    design ? `Approved EGM design (implement exactly this; if it is wrong or silent where you need it, stop and list it under "blockers" instead of improvising: a fresh reviewer will check the result against it):
+${design}` : '',
     `You may edit only: ${(task.files || []).length ? task.files.join(', ') : 'the files this task needs (keep the change minimal)'}.`,
     `Acceptance criteria:\n${bullets(task.criteria, '- the task title is fulfilled and all checks pass')}`,
     decisions.length ? `Decisions already taken (follow them):\n${decisions.map((d) => `- ${d.question} -> ${d.chosen_label || d.chosen}`).join('\n')}` : '',

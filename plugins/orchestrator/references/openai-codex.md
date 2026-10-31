@@ -1,6 +1,6 @@
 # OpenAI / Codex CLI — research notes
 
-Checked: 2026-10-27. Local CLI: `codex-cli 0.164.0` (`C:\Users\Dominik\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe`). Status: **not logged in** (`codex login status` → "Not logged in").
+Checked: 2026-10-27. Local CLI: `codex-cli 0.164.0` (`codex` on PATH). Status: **not logged in** (`codex login status` → "Not logged in").
 
 ## Models (bundled catalog `codex debug models --bundled`) [official, local]
 | slug | visible | default effort | effort levels | context | description |

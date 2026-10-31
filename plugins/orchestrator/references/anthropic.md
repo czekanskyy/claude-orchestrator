@@ -42,7 +42,7 @@ Sources: https://support.claude.com/en/articles/11145838 , https://code.claude.c
 - **[official]** Pro has a **5-hour session limit and a weekly limit**, shared between claude.ai and Claude Code. "Usage credits" (billed at API rates) are an option. Wrap-up allowance: once per week on Pro.
 - **[official]** The Claude Code default model on Pro is **Opus 5.5** (from v2.1.280). So Pro **does** have Opus 5.5 in Claude Code.
 - **[official]** Fable is not the default on any plan, so it must be selected explicitly. "Fable usage can bill to usage credits depending on plan and seat tier". Max has a separate weekly Fable limit.
-- **[user, 2026-10-27]** Fable is **not available on the user's subscription**. It goes in `excluded_models` in models.yaml, and the orchestrator and `/orchestrator:update` skip it.
+- **[maintainer, 2026-10-27]** Fable is **not available on the maintainer's Team/Pro subscriptions**. It goes in `excluded_models` in models.yaml, and the orchestrator and `/orchestrator:update` skip it.
 - **[official]** Model-specific messages exist ("You've hit your Opus limit"). After one of these, switching to another model family keeps you working. "Session/weekly limit" messages apply to all models.
 - **[official]** Thinking tokens count as output tokens, so higher effort means more usage. The docs give **no multiplier**. **[estimate]**: see `models.yaml`.
 - **[official]** Subagents draw from the same pool ("The subagent's own requests still draw on your usage").

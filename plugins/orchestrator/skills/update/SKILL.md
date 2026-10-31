@@ -6,13 +6,14 @@ argument-hint: "[--check-only]"
 
 # Orchestrator update
 
-Scripts in `${CLAUDE_PLUGIN_ROOT}/scripts`. Report to the user in **Polish**. Nothing is written before the user approves the diff. `~/.claude/orchestrator/config.yaml` is the user's and is never edited here. Never delete a model: mark it `status: deprecated`. Skip anything in `excluded_models` unless the user says otherwise.
+Scripts in `${CLAUDE_PLUGIN_ROOT}/scripts`. Report to the user in **Polish**. Nothing is written before the user approves the diff. `~/.claude/orchestrator/config.yaml`, the per-repo profiles (`~/.claude/orchestrator/repos/`) and the repos' `.claude/orchestrator.yaml` belong to the user and are never edited or discarded here. Never delete a model: mark it `status: deprecated`. Skip anything in `excluded_models` unless the user says otherwise.
 
 ## 1. Gather (cheap first)
 1. `update.mjs scan --out <scratch>/scan.json` → configured families only; per family the plans and models with their source URLs, the zero-token CLI observations (Codex catalog, `grok models`, `agy models`, versions), the registry diff against them, the staleness date. Families the user did not configure are skipped entirely: do not research them.
 2. Vendor plugin versions: `~/.claude/plugins/installed_plugins.json` (`codex@openai-codex`, `grok-build@xai-grok-build`). If the Codex plugin changed, grep its `codex-companion.mjs` for `VALID_REASONING_EFFORTS` and the `task` flags and compare with `PLUGIN_EFFORTS` in `run-codex.mjs`.
 3. Official docs for each configured family (WebFetch the `sources` from the scan; WebSearch only when a page moved). Check the whole `checklist` from the scan: models (new, removed, renamed, effort levels, context), plan tiers and 5h/weekly limits, CLI flags the adapters use, and **training/retention terms for each configured plan**. Where the terms are unclear or became worse, the safe reading wins: `sensitive_ok: false`. Cite the page, never copy long passages.
-4. Add Claude results to the scan data the same way as the other families (alias ids `haiku`, `sonnet`, `opus`).
+4. EGM (only when `scan.egm.present`): if `scan.egm.drift`, read the changed files under `scan.egm.root` (skills, `docs/claude.md`, `docs/harnesses.md`, `resources/execution_instructions.md`) and the release notes, compare with `references/egm.md` and the briefs in `scripts/lib/egm.mjs`, show the user what changed (new/removed skills or personas, changed stage order or presets, new harness requirements) and adapt those files after approval; then `update.mjs egm-stamp --approved`. An absent plugin is not an error: EGM is optional.
+5. Add Claude results to the scan data the same way as the other families (alias ids `haiku`, `sonnet`, `opus`).
 
 ## 2. Diff
 `registry.mjs diff --observed <scratch>/scan.json …` is already in the scan's `diff_markdown`. Add your own findings. Show the user ONE list in Polish: **new**, **changed** (effort, context, defaults), **not seen** (proposed `deprecated`), **plans/limits**, **privacy terms** (per plan: before → after, `sensitive_ok` impact), **CLI flags / plugins**. Every row has a source link and the date checked; uncertain facts are marked "unknown/estimate". Then ask (AskUserQuestion: apply all / select / cancel). `--check-only` → stop here.

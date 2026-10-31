@@ -1,6 +1,6 @@
-# Lineage: what v2 took from v1 (body-work.pl)
+# Lineage: what v2 took from v1
 
-v1 = `C:\Users\Dominik\Dev\body-work.pl\.claude` (`orchestrate` skill + `docs/orchestration.md` + `docs/runbooks/delegate-to-codex.md` + 7 agents), Claude + Codex only, repo-specific. Analyzed 2026-10-28.
+v1 = an earlier, private, repo-specific orchestrator (an `orchestrate` skill, an orchestration doc, a Codex delegation runbook and 7 agents), Claude + Codex only. Analyzed 2026-10-28.
 
 | v1 idea | Where it lives in v2 |
 |---|---|

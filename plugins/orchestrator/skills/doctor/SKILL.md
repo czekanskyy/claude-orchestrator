@@ -9,7 +9,7 @@ argument-hint: "[--live]"
 Scripts: `node "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.mjs"`. Report to the user in **Polish**, compact.
 
 ## Offline (default)
-Run `doctor.mjs` and print its table as is (✅ ⚠️ ❌ with a fix hint per row, then the pool table and the token line: 0 model tokens). Add at most one line per ❌/⚠️ if the hint needs context, plus one overall verdict. Do not run anything else.
+Run `doctor.mjs` and print its table as is (it includes the optional EGM rows: plugin present/version and reachable skills, drift against the tested version, gate self-check, cost estimate) (✅ ⚠️ ❌ with a fix hint per row, then the pool table and the token line: 0 model tokens). Add at most one line per ❌/⚠️ if the hint needs context, plus one overall verdict. Do not run anything else.
 
 ## `--live`
 Tell the user it spends roughly 8–10k tokens per external family (mostly the CLI's own overhead) plus a few thousand for the Claude subagent. Then:

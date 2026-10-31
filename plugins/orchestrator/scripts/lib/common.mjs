@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseYaml } from './yaml-lite.mjs';
-import { readConfig, CONFIG_FILE } from './config.mjs';
+import { readConfig, CONFIG_FILE, normalizeEgm } from './config.mjs';
 import { readRepoProfile, rulesFrom, STRICT } from './repo-profile.mjs';
 
 // Plugin root, derived from this file (${CLAUDE_PLUGIN_ROOT} is not exported to Bash-tool environments).
@@ -152,6 +152,7 @@ export function applyConfig(reg, cfg, cfgError = null) {
   reg.meta.config = { present: !!cfg, file: CONFIG_FILE, error: cfgError };
   if (cfg?.main_family && fams[cfg.main_family]) reg.meta.main_family = cfg.main_family;
   if (cfg?.privacy?.default_sensitivity) reg.meta.default_sensitivity = cfg.privacy.default_sensitivity;
+  reg.meta.egm = normalizeEgm(cfg?.egm);
   reg.meta.sensitive_globs = [...new Set([...(reg.meta.sensitive_globs || []), ...(cfg?.privacy?.sensitive_globs || [])])];
   // Without a config only the main family is enabled (conservative); /orchestrator:configure widens it.
   const main = reg.meta.main_family;

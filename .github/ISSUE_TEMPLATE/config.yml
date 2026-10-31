@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security or privacy problem
+    url: https://github.com/czekanskyy/claude-orchestrator/security/advisories/new
+    about: Privacy-filter bypass, secret exposure, sandbox escape. Please report privately.
+  - name: How to report issues safely
+    url: https://github.com/czekanskyy/claude-orchestrator/blob/main/docs/reporting-issues.md
+    about: What to include and what to redact.

@@ -1,6 +1,6 @@
 # xAI / Grok Build CLI — research notes
 
-Checked: 2026-10-27. Local CLI: `grok 1.0.70` (`C:\Users\Dominik\.grok\bin\grok.exe`). Status: **not logged in** ("You are not authenticated"). Bundled docs: `~/.grok/docs/user-guide/*.md`.
+Checked: 2026-10-27. Local CLI: `grok 1.0.70` (`~/.grok/bin/grok`). Status: **not logged in** ("You are not authenticated"). Bundled docs: `~/.grok/docs/user-guide/*.md`.
 
 ## Is there an official CLI? Yes [official]
 **Grok Build** (`grok`) is xAI's official coding agent. Install via `irm https://x.ai/cli/install.ps1 | iex`. The official page says it is "now powered by Grok 4.7" (https://x.ai/build). No third-party alternative is needed. Grok Build has a full headless mode (`-p`, `--output-format json`) and flags compatible with Claude Code (`--permission-mode`, `--allow/--deny`, `--tools`).

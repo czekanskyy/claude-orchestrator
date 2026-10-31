@@ -1,0 +1,16 @@
+{
+  "critical": [
+    "Przeprojektuj architekturę modułu płatności: nowy model danych i migracja schematu bazy, zmiany w api, web i worker",
+    "Add OAuth login with roles and permissions across the api, web and worker modules, including a database migration for existing users",
+    "Migrate the production database schema from MySQL to Postgres and update every module that touches it",
+    "Redesign the event pipeline architecture: introduce event sourcing for orders, payments and inventory, with a migration of existing data",
+    "Rewrite the whole billing subsystem from scratch, including payment provider integration and refunds, in several phases"
+  ],
+  "not_critical": [
+    "Fix the typo in README.md",
+    "Zmień kolor przycisku Zapisz na niebieski",
+    "Fix the typo in the login button label in src/ui/Login.tsx",
+    "The checkout test is flaky and fails intermittently on CI. Find the root cause and fix it.",
+    "Add a CSV export to the reports page with a name filter and correct quoting"
+  ]
+}

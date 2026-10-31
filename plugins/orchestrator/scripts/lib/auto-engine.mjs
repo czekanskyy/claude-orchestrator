@@ -16,7 +16,7 @@ import { availability, recordWindows, recordBlock, clearBlock, normPolicy, EXTER
 import { resolveDecision, guardDiff, undoCommand } from './auto-decisions.mjs';
 import { verifyCommands, readContract } from './auto-contract.mjs';
 import { SYSTEM_RULES, plannerPrompt, taskPrompt, reviewPrompt, secondOpinionPrompt, readAgentBody, extractFinalJson } from './auto-worker.mjs';
-import { egmGate } from '../egm-gate.mjs';
+import { egmStep, egmDrift, designFor } from './auto-egm.mjs';
 import { buildReport, buildHandoff } from './auto-report.mjs';
 
 const SENS = ['none', 'internal', 'sensitive'];
@@ -384,9 +384,10 @@ export class AutoEngine {
     if (this.st.limits[this.deps.reg.meta.main_family] && route.family !== this.deps.reg.meta.main_family) limitLog(this.paths, `ROUTED task=${t.id} to ${route.family} while ${this.deps.reg.meta.main_family} is soft/blocked`, new Date(this.now()));
     if (t.last_family && t.last_family !== route.family) { this.st.events.reroutes += 1; limitLog(this.paths, `REROUTE task=${t.id} ${t.last_family} -> ${route.family} (limits/privacy)`, new Date(this.now())); this.jr(`${t.id}: rerouted ${t.last_family} -> ${route.family} (limits/privacy)`); }
     t.last_family = route.family;
-    if (t.risk === 'high' || t.critical) {
-      const g = egmGate({ critical: true, setting: this.rules?.egm || 'ask', contract: this.contract });
-      this.jr(`${t.id}: egm_gate -> ${g.action}${g.consent === false ? ' (no pre-consent in the contract: continuing without EGM)' : ''}`);
+    // EGM (Elephant-Goldfish design + review before the work): only with the contract's pre-consent; otherwise the gate says continue
+    if (t.egm?.status === 'running' || (!t.egm && (t.risk === 'high' || t.critical))) {
+      const eg = await egmStep(this, t, sens);
+      if (eg.stop) return;
     }
     const base = this.git(this.wt, ['rev-parse', 'HEAD']).out;
     if (t.status !== 'running') { t.status = 'running'; t.base_sha = t.resume ? t.base_sha || base : base; }
@@ -397,7 +398,7 @@ export class AutoEngine {
     const forced = t.decisions.filter((d) => d.outcome === 'decided').map((d) => ({ question: d.question, chosen: d.chosen, chosen_label: (d.options.find((o) => o.id === d.chosen) || {}).label }));
     const prompt = resuming
       ? `The previous run was interrupted (${t.resume.reason}); your edits are still in the working tree. Check \`git status\` and \`git diff\`, finish the task, and end with the final JSON block as before.${failure ? `\nKnown failure evidence:\n${failure}` : ''}`
-      : taskPrompt({ contract: this.contract, task: t, decisions: forced, failure, resumeNote: t.resume || (t.attempts && !failure) ? 'Partial work from an earlier attempt may be in the working tree: inspect `git status`/`git diff` first and continue from it.' : null, rules: this.rules });
+      : taskPrompt({ contract: this.contract, task: t, decisions: forced, failure, design: designFor(t), resumeNote: t.resume || (t.attempts && !failure) ? 'Partial work from an earlier attempt may be in the working tree: inspect `git status`/`git diff` first and continue from it.' : null, rules: this.rules });
     this.st.inflight = { task: t.id, kind: 'work', family: route.family, model: route.model, effort: route.effort, session_id: sessionId, phase: 'dispatched', base_sha: t.base_sha, attempt: t.attempts + 1, started_at: this.now(), pid: null };
     this.st.counters.dispatches += 1;
     this.save();
@@ -541,6 +542,11 @@ export class AutoEngine {
     if (this.needsReview(t) && changed.length) {
       const verdict = await this.reviewTask(t, route, sens, changed);
       if (verdict === 'parked' || verdict === 'retry') { this.st.inflight = null; this.save(); return; }
+    }
+    // 3b. EGM drift check (only for a task that had an approved design): design vs the actual change, one fix round
+    if (t.egm?.status === 'done' && changed.length) {
+      const dv = await egmDrift(this, t, route, sens);
+      if (dv === 'parked' || dv === 'retry') { this.st.inflight = null; this.save(); return; }
     }
     // 4. checkpoint commit (a takeover/abort that arrived meanwhile wins: nothing is committed)
     const ctl = readControl(this.paths);

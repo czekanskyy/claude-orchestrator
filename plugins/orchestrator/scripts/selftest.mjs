@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Self-tests. No real model calls and none of the user's state: isolated ORCH_HOME/ORCH_CONFIG, --simulate and a mock agy.
-// Usage: node selftest.mjs [all|dryrun|fallback|escalate|update-detect|resume|overlay|accounts|gemini|privacy|config|doctor|update|migrate|guard|triage|flow|render|init|auto] [--verbose]
+// Usage: node selftest.mjs [all|dryrun|fallback|escalate|update-detect|resume|overlay|accounts|gemini|privacy|config|doctor|update|migrate|guard|triage|flow|render|init|egm|release|auto] [--verbose]
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,6 +16,8 @@ process.env.ORCH_CLAUDE_ACCOUNT_FILE = path.join(TMP, 'no-account.json'); // def
 process.env.ORCH_PROJECT = TMP; // no repo prefs from the real cwd
 process.env.ORCH_CONFIG = path.join(TMP, 'config.yaml'); // fixture config: every family enabled, catalog privacy policy
 process.env.ORCH_AGY_BIN = path.join(HERE, 'fixtures', 'mock-agy.mjs');
+const egmTests = await import(pathToFileURL(path.join(HERE, 'selftest-egm.mjs')).href);
+process.env.ORCH_EGM_DIR = egmTests.mkFakeEgm(path.join(TMP, 'fake-egm')); // the machine's real egm plugin never leaks into the tests
 const cfgLib = await import(pathToFileURL(path.join(HERE, 'lib', 'config.mjs')).href);
 const FIXTURE_CONFIG = {
   schema_version: cfgLib.CONFIG_SCHEMA_VERSION,
@@ -522,7 +524,7 @@ function migrate() {
 // ---------------------------------------------------------------- v3: entry-point guard (importing never starts a CLI)
 function guard() {
   log('\n=== ENTRY-POINT GUARD ===');
-  const scripts = ['run-codex.mjs', 'run-grok.mjs', 'run-gemini.mjs', 'doctor.mjs', 'update.mjs', 'configure.mjs', 'migrate.mjs', 'registry.mjs', 'usage.mjs', 'triage.mjs', 'run.mjs', 'dryrun.mjs', 'egm-gate.mjs'];
+  const scripts = ['run-codex.mjs', 'run-grok.mjs', 'run-gemini.mjs', 'doctor.mjs', 'update.mjs', 'configure.mjs', 'migrate.mjs', 'registry.mjs', 'usage.mjs', 'triage.mjs', 'run.mjs', 'dryrun.mjs', 'egm-gate.mjs', 'egm.mjs'];
   for (const s of scripts) {
     const r = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(pathToFileURL(path.join(HERE, s)).href)}); console.log('imported')`], { encoding: 'utf8', env: process.env, timeout: 20000 });
     check('guard', `${s}: import has no side effects`, r.status === 0 && r.stdout.trim() === 'imported', (r.stdout + r.stderr).slice(0, 150));
@@ -562,7 +564,7 @@ function triageScenario() {
   const withRun = JSON.parse(spawnSync(process.execPath, [path.join(HERE, 'triage.mjs'), '--text', 'Fix the typo in README.md', '--run', 'st'], { encoding: 'utf8', env: process.env }).stdout);
   check('triage', '--run creates the run directory and ledger in the same call', withRun.run?.dir && fs.existsSync(path.join(withRun.run.dir, 'ledger.json')) && withRun.run.dir.startsWith(TMP));
   const g = gateLib.egmGate({ critical: true });
-  check('triage', 'egm_gate placeholder returns not-critical and continue (critical flag kept as candidate)', g.gate === 'egm_gate' && g.critical === false && g.action === 'continue' && g.candidate === true);
+  check('triage', 'egm_gate keeps the triage flag as a candidate but decides itself: consent is still unknown, so it asks and never runs', g.gate === 'egm_gate' && g.candidate === true && g.consent === null && g.action !== 'egm');
 }
 
 function flowScenario() {
@@ -579,7 +581,7 @@ function flowScenario() {
     check('flow', `${cls}: assignment table has Agent | Model · effort | Task and rows`, /\| Agent \| Model · effort \| Task \|/.test(d.text) && d.rows.length >= plans[cls].length);
     check('flow', `${cls}: every dispatched row has a persona with an emoji`, d.rows.every((r) => /^\S+ \S+/.test(r.agent) && !/^[\w]/.test(r.agent)));
     check('flow', `${cls}: personas are unique within the run`, new Set(d.rows.map((r) => r.agent)).size === d.rows.length, d.personas.join(', '));
-    check('flow', `${cls}: egm_gate continues`, d.gate.action === 'continue' && /egm_gate: continue/.test(d.text));
+    check('flow', `${cls}: egm_gate is consulted, never starts EGM by itself`, ['continue', 'ask'].includes(d.gate.action) && /egm_gate: (continue|ask)/.test(d.text));
     const again = dryLib.dryRun(reg, prompt, { tasks: plans[cls], pools });
     check('flow', `${cls}: personas are deterministic`, JSON.stringify(again.personas) === JSON.stringify(d.personas));
   }
@@ -915,12 +917,48 @@ async function initScenario() {
   // ---- skills
   const skill = (n) => fs.readFileSync(path.join(PLUGIN, 'skills', n, 'SKILL.md'), 'utf8');
   check('init', 'the init skill is user-only (disable-model-invocation); no other skill is', /^disable-model-invocation: true$/m.test(skill('init')) && /^name: init$/m.test(skill('init')) && ['orchestrate', 'configure', 'doctor', 'update'].every((n) => !/disable-model-invocation/.test(skill(n))));
-  check('init', 'orchestrate and configure only gain a few lines that point to init', /orchestrator:init/.test(skill('orchestrate')) && /orchestrator:init/.test(skill('configure')) && skill('orchestrate').length < 10500 && fs.existsSync(path.join(PLUGIN, 'references', 'repo-init.md')));
+  check('init', 'orchestrate and configure only gain a few lines that point to init', /orchestrator:init/.test(skill('orchestrate')) && /orchestrator:init/.test(skill('configure')) && skill('orchestrate').length < 11500 && fs.existsSync(path.join(PLUGIN, 'references', 'repo-init.md')));
 }
 
 // autonomous mode: its own file (engine on temp repos, simulated clock, fake workers and usage feeds)
 const autoScenarioRun = async () => (await import('./selftest-auto.mjs')).autoScenario({ check, TMP, HERE, common, log });
-const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, 'gemini-limits': geminiLimits, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario, init: initScenario, auto: autoScenarioRun };
+const egmScenarioRun = () => egmTests.egmScenario({ check, TMP, HERE, common, log });
+
+// release hygiene: the scanner finds what it should, the repo is clean, manifests agree, the public files exist
+async function release() {
+  const S = 'release';
+  const hy = await import(pathToFileURL(path.join(HERE, 'hygiene.mjs')).href);
+  const who = ['j', 'doe'].join(''); // assembled so this file does not trip its own scan
+  const seeded = [
+    `see C:\\Users\\${who}\\project\\a.ts`, `cache in /home/${who}/.cache`, `mail ${who}@corp-example.net`, 'key sk-' + 'a'.repeat(24),
+  ].join('\n');
+  const rules = hy.scanText(seeded, 'x.md').map((f) => f.rule);
+  check(S, 'hygiene finds a personal Windows and POSIX path, an e-mail and a key-like string', ['windows-user-path', 'posix-user-path', 'email', 'secret'].every((r) => rules.includes(r)), rules.join(','));
+  const clean = 'C:\\Users\\<you>\\x, /home/runner/work, noreply@anthropic.com, git@github.com:o/r.git, ~/.claude/orchestrator, dev@example.com';
+  check(S, 'hygiene accepts placeholders, CI paths, noreply and example addresses', hy.scanText(clean, 'y.md').length === 0, JSON.stringify(hy.scanText(clean, 'y.md')));
+  check(S, 'hygiene --deny flags a private word case-insensitively', hy.scanText('Contact Acme-Corp', 'z.md', ['acme-corp']).some((f) => f.rule === 'denied-word'));
+  const root = path.resolve(HERE, '..', '..', '..');
+  if (!fs.existsSync(path.join(root, '.claude-plugin', 'marketplace.json'))) return; // running from an installed copy, not a checkout
+  const scan = hy.scanRepo(root);
+  check(S, 'the repository has no personal paths, e-mails or key-like strings in tracked or untracked files', scan.skipped || scan.findings.length === 0, JSON.stringify(scan.findings.slice(0, 3)));
+  const j = (f) => JSON.parse(fs.readFileSync(path.join(root, f), 'utf8'));
+  const plugin = j('plugins/orchestrator/.claude-plugin/plugin.json'); const mkt = j('.claude-plugin/marketplace.json');
+  const entry = mkt.plugins.find((p) => p.name === plugin.name);
+  check(S, 'plugin.json and the marketplace agree on name and version, and the version is semver', !!entry && entry.version === plugin.version && mkt.metadata.version === plugin.version && /^\d+\.\d+\.\d+$/.test(plugin.version), `${plugin.version} / ${entry?.version} / ${mkt.metadata.version}`);
+  const log2 = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
+  check(S, 'the root CHANGELOG has an entry for the released version', log2.includes(`## ${plugin.version} `), plugin.version);
+  const need = ['README.md', 'LICENSE', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md', '.gitignore', 'docs/privacy.md', 'docs/architecture.md', 'docs/reporting-issues.md', '.github/PULL_REQUEST_TEMPLATE.md', '.github/ISSUE_TEMPLATE/bug_report.md'];
+  check(S, 'the public files exist', need.every((f) => fs.existsSync(path.join(root, f))), need.filter((f) => !fs.existsSync(path.join(root, f))).join(','));
+  const links = [];
+  for (const f of ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'docs/privacy.md', 'docs/architecture.md', 'docs/reporting-issues.md']) {
+    const text = fs.readFileSync(path.join(root, f), 'utf8');
+    for (const m of text.matchAll(/\]\((?!https?:|#|mailto:)([^)#\s]+)(?:#[^)]*)?\)/g)) if (!fs.existsSync(path.resolve(root, path.dirname(f), m[1]))) links.push(`${f} -> ${m[1]}`);
+  }
+  check(S, 'relative links in the public docs resolve', links.length === 0, links.join('; '));
+  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+  check(S, 'the README covers install, init, auto, privacy, EGM, update and troubleshooting', ['## Install on a new machine', '/orchestrator:init', '/orchestrator:auto', '## Privacy model', '## EGM mode', '## Updating', '## Troubleshooting'].every((s) => readme.includes(s)));
+}
+const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, 'gemini-limits': geminiLimits, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario, init: initScenario, egm: egmScenarioRun, release, auto: autoScenarioRun };
 for (const [name, fn] of Object.entries(runs)) if (which === 'all' || which === name) await fn();
 
 log('\n=== RESULTS ===');

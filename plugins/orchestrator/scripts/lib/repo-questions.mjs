@@ -170,8 +170,8 @@ function question(key, scan, d, reg) {
       return { header: 'Wrażliwość', question: `Jaki domyślny poziom wrażliwości danych w tym repo (wykryto: ${[scan.sensitivity.secret_files_total && `pliki sekretów (${scan.sensitivity.secret_files.map((s) => s.path).join(', ')})`, scan.sensitivity.pii_dirs.length && 'katalogi z danymi osobowymi', scan.sensitivity.data_files.total && 'pliki danych', scan.docs.evidence.some((e) => /^\[[^\]]*privacy/.test(e)) && 'wzmianki o RODO/danych klientów w docs'].filter(Boolean).join(', ') || 'brak twardych sygnałów'})?`, options: levels.map((l, i) => (i === 0 ? opt(rec(`${l} (wg wykrytych sygnałów)`), text[l], 'repo') : opt(l, text[l], 'custom', { ...d.repo, default: l }))) };
     }
     case 'egm':
-      return { header: 'EGM', question: 'Co robić przy zadaniach krytycznych (EGM; mechanizm jest jeszcze placeholderem, ustawienie zapisujemy z góry)?', options: [
-        opt(rec('Pytaj (ask)'), 'Przy zadaniu krytycznym bramka egm_gate zapyta, zanim cokolwiek się wydarzy.', 'default'),
+      return { header: 'EGM', question: 'Co robić przy zadaniach krytycznych (tryb EGM: projekt + recenzje Goldfish, bardzo kosztowny)?', options: [
+        opt(rec('Pytaj (ask)'), 'Przy zadaniu krytycznym bramka egm_gate pokaże koszt i zapyta, zanim cokolwiek się wydarzy.', 'default'),
         opt('Wyłącz (off)', 'Bramka egm_gate nic nie robi w tym repo.', 'custom', 'off'),
       ] };
     default: return null;

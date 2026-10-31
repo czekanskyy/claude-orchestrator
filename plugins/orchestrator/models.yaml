@@ -260,7 +260,7 @@ families:
 excluded_models:
   - id: claude-fable
     family: claude
-    reason: "Not available on the user's Claude subscriptions (Team, Pro) (user statement 2026-10-27)."
+    reason: "Not available on the Claude Team and Pro plans this registry was verified with (maintainer statement 2026-10-27). Remove this entry to route to it if your plan includes it."
     since: "2026-10-27"
     match: [fable, claude-fable-5-1, claude-fable-5]
   - id: gpt-daybreak
@@ -283,6 +283,30 @@ excluded_models:
     reason: "Third-party models served through agy (Claude, GPT-OSS): the Claude and GPT families have their own adapters and pools."
     since: "2026-10-31"
     match: [claude-sonnet-4-6, claude-opus-4-6-thinking, gpt-oss-120b-medium]
+
+# Vendor plugins the orchestrator drives (refreshed by /orchestrator:update; the user's install is only compared, never changed).
+# EGM = Elephant-Goldfish Model by Google (Apache-2.0). tested_version / fingerprint = what the briefs in scripts/lib/egm.mjs were written against.
+plugins:
+  egm:
+    id: "egm@egm"
+    marketplace: "google/elephant-goldfish-model"
+    tested_version: "0.1.0"
+    verified_at: "2026-10-31"
+    fingerprint:
+      - "skills/egm-brainstorm/SKILL.md:fb594315b47d"
+      - "skills/egm-draft/SKILL.md:7908cb6d6b9a"
+      - "skills/egm-review/SKILL.md:5e96e3b586a0"
+      - "skills/egm-review-loop/SKILL.md:d99803ad5bf9"
+      - "skills/egm-resolve/SKILL.md:6bb1909b42b8"
+      - "skills/egm-drift-report/SKILL.md:c000ffe2e77a"
+      - "docs/claude.md:cbc51e603740"
+      - "docs/harnesses.md:d1e24628833a"
+      - "resources/execution_instructions.md:06f0ee648efa"
+    sources:
+      - "https://github.com/google/elephant-goldfish-model"
+      - "https://egm.dev/"
+      - "https://opensource.googleblog.com/2026/10/introducing-elephant-goldfish-model-plugin.html"
+      - "https://research.google/pubs/elephants-goldfish-and-the-new-golden-age-of-software-engineering/"
 
 models:
   # ---------------------------------------------------------------- Claude (native subagents)

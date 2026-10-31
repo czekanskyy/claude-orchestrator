@@ -2,18 +2,28 @@
 // --dry-run: triage + path + egm_gate + personas + assignment tables, with ZERO model calls.
 // Without --tasks the post-spec/post-split plan is only described (it needs the model); with --tasks (a plan like
 // fixtures/plan.json) it is routed and shown per wave.
-// Usage: node dryrun.mjs (--text "..." | --file F) [--tasks plan.json]
+// Usage: node dryrun.mjs (--text "..." | --file F) [--tasks plan.json] [--egm]
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { loadRegistry, parseArgs, fail } from './lib/common.mjs';
 import { route } from './registry.mjs';
 import { triage } from './triage.mjs';
 import { egmGate } from './egm-gate.mjs';
-import { addRoute, assignmentTable } from './lib/render.mjs';
+import { addRoute, assignmentTable, persona } from './lib/render.mjs';
+import { egmStatus, estimateEgm } from './lib/egm.mjs';
 
-export function dryRun(reg, text, { tasks, pools } = {}) {
+// The EGM phases the gate would run after a yes, as an assignment table (personas and models come from the same router).
+function egmPhaseTable(gate) {
+  const steps = (gate.estimate_full?.steps || []).filter((s) => !s.hidden && s.phase !== 'drift');
+  const counters = {};
+  const rows = steps.map((s) => { const n = counters[s.role] || 0; counters[s.role] = n + 1; return { agent: persona(s.role, n), model: s.model, effort: s.effort, id: s.id, title: s.title }; });
+  return assignmentTable(rows);
+}
+
+export function dryRun(reg, text, { tasks, pools, explicit = false, status } = {}) {
   const t = triage(text, reg);
-  const gate = egmGate({ critical: t.critical, setting: reg.meta.repo_rules?.egm });
+  const gate = egmGate({ class: t.class, critical: t.critical, text, repoCriticalHits: t.critical_paths, riskHint: t.risk_hint, reg, explicit, pools, sensitivity: t.sensitivity, status: status || egmStatus() });
+  if (['ask', 'egm'].includes(gate.action)) gate.estimate_full = estimateEgm(reg, { review: gate.settings.review, crossFamily: gate.settings.goldfish === 'cross', sensitivity: t.sensitivity, pools });
   const ledger = { rows: [], counters: {} };
   const blocks = [];
   const showWaves = (r, label) => {
@@ -41,7 +51,9 @@ export function dryRun(reg, text, { tasks, pools } = {}) {
     `Path: ${t.class} (confidence ${t.confidence}) · sensitivity ${t.sensitivity} · critical ${t.critical} · risk hint ${t.risk_hint}`,
     `Reasons: ${t.reasons.join('; ')}`,
     `Flow: ${flow}`,
-    `egm_gate: ${gate.action} (critical=${gate.critical}, triage flag=${gate.candidate}, repo setting=${gate.setting})`,
+    `egm_gate: ${gate.action} (critical=${gate.critical}${gate.rubric.categories.length ? ` [${gate.rubric.categories.join(', ')}]` : ''}, triage flag=${gate.candidate}, mode=${gate.settings.mode}, repo setting=${gate.setting}) ${gate.note}`,
+    ...(gate.action === 'ask' ? ['', 'EGM proposal (nothing starts without a yes)', `Cost: ${gate.estimate.summary}`, `Question: ${gate.question.question}`, `Options: ${gate.question.options.map((o) => o.label).join(' / ')}`] : []),
+    ...(['ask', 'egm'].includes(gate.action) && gate.estimate_full?.ok ? ['', `EGM phases if accepted (${gate.settings.review} review): design → Goldfish review stages with Elephant resolve after each → your approval → implementation by routed workers → drift check`, egmPhaseTable(gate), '(implementation workers are planned from the approved design and cost the same as in the normal flow; resolve turns resume the Elephant)'] : []),
     ...blocks.flatMap((b) => ['', `${b.label}`, b.table]),
     '', 'Model calls: 0',
   ].join('\n');
@@ -49,9 +61,9 @@ export function dryRun(reg, text, { tasks, pools } = {}) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
-  const a = parseArgs(process.argv.slice(2));
+  const a = parseArgs(process.argv.slice(2), { flags: ['egm'] });
   const text = a.file ? fs.readFileSync(a.file, 'utf8') : a.text;
-  if (!text) fail('usage: dryrun.mjs (--text "..." | --file F) [--tasks plan.json]');
+  if (!text) fail('usage: dryrun.mjs (--text "..." | --file F) [--tasks plan.json] [--egm]');
   const tasks = a.tasks ? JSON.parse(fs.readFileSync(a.tasks, 'utf8')) : undefined;
-  process.stdout.write(`${dryRun(loadRegistry(), text, { tasks: tasks?.tasks || tasks }).text}\n`);
+  process.stdout.write(`${dryRun(loadRegistry(), text, { tasks: tasks?.tasks || tasks, explicit: !!a.egm }).text}\n`);
 }

@@ -93,7 +93,7 @@ The fingerprint hashes the policy-bearing files the profile was derived from (ru
 | `verify` | the runner's check list and the briefs' "Allowed commands" |
 | `critical_paths` | triage flags a request naming such a path (`critical`, `risk_hint: high`); the router raises any task whose `files` hit one to `risk: high` (security-lens review follows) |
 | `sensitivity` | the repo's default sensitivity: triage's baseline and the router's default; extra globs join `meta.sensitive_globs` → privacy filter |
-| `egm` | passed to `egm_gate` (`setting`), which is still a placeholder |
+| `egm` | read by `egm_gate` through `reg.meta.repo_rules.egm`: `off` here or in `config.yaml` disables the proposal (an explicit `--egm` still wins) |
 | `branching` | rule lines in the preflight block (base, pattern, protected branches, PR policy) |
 
 ## Health
