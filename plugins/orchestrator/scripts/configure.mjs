@@ -6,7 +6,8 @@
 //   apply --answers FILE|-      merge answers over the current config, validate, write (atomic, .bak kept)
 //   validate                    check the current config.yaml against the schema
 // Answers = config shape without schema_version: { main_family, families: { <f>: { enabled, plans, data_policy } },
-//   defaults: { orchestrator }, privacy: { sensitive_globs, default_sensitivity } }. Omitted families/keys keep their values.
+//   defaults: { orchestrator }, privacy: { sensitive_globs, default_sensitivity },
+//   auto: { limits: { soft_pct, hard_pct, weekly_soft_pct, weekly_hard_pct, reserve_pct, safety_margin_min }, notify: { channel, command } } }. Omitted families/keys keep their values.
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { loadRegistry, parseArgs, out, fail, repoRoot, readProjectPrefs, enabledFamilies } from './lib/common.mjs';
@@ -55,6 +56,7 @@ export function mergeAnswers(current, answers) {
   }
   if (answers.defaults) cfg.defaults = { ...(current?.defaults || {}), ...answers.defaults };
   if (answers.privacy) cfg.privacy = { ...(current?.privacy || {}), ...answers.privacy };
+  if (answers.auto) cfg.auto = { limits: { ...(current?.auto?.limits || {}), ...(answers.auto.limits || {}) }, notify: { ...(current?.auto?.notify || {}), ...(answers.auto.notify || {}) } };
   cfg.updated = today();
   return cfg;
 }
@@ -70,7 +72,8 @@ function showMarkdown(reg, config) {
   if (!config) return `No config yet (${CONFIG_FILE}). Run /orchestrator:configure. Conservative defaults apply: only ${reg.meta.main_family} enabled, no sensitive data leaves it.`;
   const rows = effectiveSummary(reg).map((e) => `| ${e.family}${e.family === reg.meta.main_family ? ' (main)' : ''} | ${e.plans.join(', ')} | ${e.sensitive_ok ? 'yes' : 'NO'} | ${e.training_on_data} | ${e.policy_source || ''} |`);
   return [`Config: ${CONFIG_FILE} (updated ${config.updated || '?'})`, '', '| family | plans | sensitive data ok | trains on data | policy source |', '|---|---|---|---|---|', ...rows,
-    '', `Per-repo default: ${config.defaults?.orchestrator || 'unset (ask)'}${config.privacy?.sensitive_globs?.length ? ` · extra sensitive globs: ${config.privacy.sensitive_globs.join(', ')}` : ''}`].join('\n');
+    '', `Per-repo default: ${config.defaults?.orchestrator || 'unset (ask)'}${config.privacy?.sensitive_globs?.length ? ` · extra sensitive globs: ${config.privacy.sensitive_globs.join(', ')}` : ''}`,
+    `Autonomous runs: limits ${config.auto?.limits ? Object.entries(config.auto.limits).map(([k, v]) => `${k}=${v}`).join(' ') : 'defaults (soft 80 / hard 95 / reserve 5)'} · notify: ${config.auto?.notify?.channel || 'file'}`].join('\n');
 }
 
 async function main(argv) {

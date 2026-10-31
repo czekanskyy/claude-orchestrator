@@ -15,6 +15,7 @@ You plan, route, verify, integrate and commit; you do not type bulk code. Worker
 ## 0. Preflight (once per session)
 `registry.mjs preflight --md`. Warnings count as (d), one line each: config missing → `/orchestrator:configure`; stale → `/orchestrator:update`; subscription mismatch or a nearly empty main pool → suggest switching accounts, never switch for them.
 **Which orchestrator** (only when the repo ships its own): `--use global|project` wins; else `orchestrator.choice`: `project` → invoke the project skill and stop; `global` → continue; `ask` → AskUserQuestion (save with `registry.mjs project-pref --orchestrator <choice>` if wanted). Running global there, the repo's own rules (branching, commits, checks, critical paths, definition of done) still win.
+**Autonomous run**: the preflight `auto` block (an active or finished `/orchestrator:auto` run of this repo) is one status line; never start a second run or touch its worktree. After `takeover`: read `handoff.md` in that run dir, `run.mjs init`, add rows for the pending tasks, continue in the auto worktree (`P/references/autonomous.md`).
 **Repo rules** (`Repo rules:` block of the preflight; precedence profile > repo docs > defaults, `P/references/repo-init.md`): obey them in §2-§7. No profile in a non-empty repo → (d) one line suggesting `/orchestrator:init`, then work with the repo's own rules winning. Never run init yourself.
 
 ## 1. Triage and path

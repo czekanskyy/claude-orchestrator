@@ -15,6 +15,8 @@ import { readConfig, validateConfig, serializeConfig, CONFIG_SCHEMA_VERSION } fr
 import { cliInfo, authCheck } from './lib/health.mjs';
 import { validate, staleCheck, route, projectOrchestrators } from './registry.mjs';
 import { statusMarkdown } from './usage.mjs';
+import { keepAwakeCapability } from './lib/auto-system.mjs';
+import { autoRunFor } from './lib/auto-core.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, 'fixtures');
@@ -189,6 +191,41 @@ function checkRouting(reg) {
   add('routing', problems.length ? 'fail' : 'ok', problems.length ? problems.join('; ') : `fixture plan: ${r.assignments.length} assignments, ${sensitive.length} sensitive task(s) only on sensitive_ok families${failedClosed ? `, ${failedClosed} failed closed` : ''}, ${agents.length} subagent dispatches`, problems.length ? 'privacy or agent wiring broken: report a bug' : '');
 }
 
+// Autonomous mode (offline, zero tokens): supervisor files, headless flags, keep-awake, notification channel, worktrees.
+const HEADLESS_FLAGS = ['--output-format', '--resume', '--session-id', '--permission-mode', '--permission-prompts', '--settings', '--setting-sources', '--append-system-prompt', '--tools', '--effort', '--model'];
+export function autoRows(reg, root = repoRoot()) {
+  const rows = [];
+  const row = (area, status, detail, fix = '') => rows.push({ area, status, detail, fix });
+  const files = ['auto.mjs', 'auto-supervisor.mjs', 'lib/auto-engine.mjs', 'lib/auto-worker.mjs', 'lib/auto-core.mjs'];
+  const broken = files.filter((f) => !fs.existsSync(path.join(HERE, f)) || spawnSync(process.execPath, ['--check', path.join(HERE, f)], { encoding: 'utf8' }).status !== 0);
+  row('auto supervisor', broken.length ? 'fail' : 'ok', broken.length ? `missing or broken: ${broken.join(', ')}` : `scripts present and parse; node ${process.version}`, broken.length ? 'reinstall the plugin' : '');
+  const bin = process.env.ORCH_CLAUDE_BIN || (spawnSync(process.platform === 'win32' ? 'where' : 'which', ['claude'], { encoding: 'utf8' }).stdout || '').split(/\r?\n/)[0].trim();
+  if (!bin) row('auto headless', 'fail', 'claude CLI not found on PATH', 'install Claude Code');
+  else {
+    const help = spawnSync(bin, ['--help'], { encoding: 'utf8', timeout: 30000, shell: /\.(cmd|bat)$/i.test(bin) }).stdout || '';
+    const missing = HEADLESS_FLAGS.filter((f) => !help.includes(f));
+    row('auto headless', missing.length ? 'fail' : 'ok', missing.length ? `claude --help lacks: ${missing.join(', ')}` : 'claude -p: stream-json, --resume, --session-id, dontAsk permissions, --settings/--setting-sources, --tools all available', missing.length ? 'update Claude Code (claude update)' : '');
+  }
+  const ka = keepAwakeCapability();
+  row('auto keep-awake', ka.ok ? 'ok' : 'warn', ka.ok ? `${ka.method}; ${ka.note}` : ka.note, ka.ok ? '' : 'a run needs the machine awake: adjust the power plan by hand');
+  const n = readConfig().config?.auto?.notify || {};
+  const ch = n.channel || 'file';
+  if (ch === 'os') row('auto notify', ka.ok || process.platform !== 'win32' ? 'ok' : 'warn', `channel os (${process.platform})`, ka.ok ? '' : 'powershell is needed for toast notifications');
+  else if (ch === 'command') row('auto notify', n.command ? 'ok' : 'fail', n.command ? 'channel command (user command receives the generic text in ORCH_NOTIFY_TEXT)' : 'channel command without a command', n.command ? '' : '/orchestrator:configure');
+  else row('auto notify', 'warn', ch === 'none' ? 'notifications are off' : 'file only: nothing reaches your phone or desktop', '/orchestrator:configure (notify channel: os or command)');
+  const gv = spawnSync('git', ['--version'], { encoding: 'utf8' });
+  const ver = (gv.stdout.match(/(\d+)\.(\d+)/) || []).slice(1).map(Number);
+  const wtOk = gv.status === 0 && (ver[0] > 2 || (ver[0] === 2 && ver[1] >= 17));
+  row('auto worktree', wtOk ? 'ok' : 'fail', gv.status === 0 ? gv.stdout.trim() : 'git not found', wtOk ? '' : 'install git >= 2.17');
+  const run = autoRunFor(root);
+  if (run.state !== 'none') row('auto runs', 'warn', `${run.run_id}: ${run.status}${run.state === 'finished' ? ' (not reviewed yet)' : ' (owns this repo)'}`, '/orchestrator:auto status | report | review');
+  return rows;
+}
+
+function checkAuto(reg) {
+  for (const r of autoRows(reg)) add(r.area, r.status, r.detail, r.fix);
+}
+
 // ---------------------------------------------------------------- live checks
 function checkLive(reg, a) {
   // Fixed, reused workspace: a Codex app-server broker may keep a handle on its cwd (Windows), so it is never deleted.
@@ -228,6 +265,7 @@ export async function doctor(a = {}) {
   await checkLimits(reg);
   checkAdapters(reg);
   checkRouting(reg);
+  checkAuto(reg);
   const adapterTokens = a.live ? checkLive(reg, a) : 0;
   const claudeTokens = Number(a['claude-tokens'] || 0);
   const pools = allPoolStatus(reg);

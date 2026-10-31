@@ -8,7 +8,9 @@ import { parseYaml } from './yaml-lite.mjs';
 export const CONFIG_SCHEMA_VERSION = 1;
 export const CONFIG_FILE = process.env.ORCH_CONFIG || path.join(process.env.ORCH_HOME || path.join(os.homedir(), '.claude', 'orchestrator'), 'config.yaml');
 
-const TOP_KEYS = ['schema_version', 'main_family', 'families', 'defaults', 'privacy', 'updated'];
+const TOP_KEYS = ['schema_version', 'main_family', 'families', 'defaults', 'privacy', 'auto', 'updated'];
+export const AUTO_LIMIT_KEYS = ['soft_pct', 'hard_pct', 'weekly_soft_pct', 'weekly_hard_pct', 'reserve_pct', 'safety_margin_min'];
+export const AUTO_NOTIFY_CHANNELS = ['os', 'file', 'command', 'none'];
 const FAMILY_KEYS = ['enabled', 'plans', 'data_policy'];
 const POLICY_KEYS = ['training_on_data', 'sensitive_ok'];
 const TRAINING_VALUES = [true, false, 'unknown', 'user_setting'];
@@ -72,6 +74,32 @@ export function validateConfig(cfg, families) {
       if (cfg.privacy.sensitive_globs !== undefined && (!Array.isArray(cfg.privacy.sensitive_globs) || cfg.privacy.sensitive_globs.some((g) => typeof g !== 'string'))) errors.push('privacy.sensitive_globs must be a list of strings');
     }
   }
+  if (cfg.auto !== undefined) {
+    // defaults for autonomous runs (/orchestrator:auto); the contract of each run may override them
+    if (!isObj(cfg.auto)) errors.push('auto must be a map');
+    else {
+      for (const k of Object.keys(cfg.auto)) if (!['limits', 'notify'].includes(k)) errors.push(`auto: unknown key "${k}"`);
+      const l = cfg.auto.limits;
+      if (l !== undefined) {
+        if (!isObj(l)) errors.push('auto.limits must be a map');
+        else {
+          for (const [k, v] of Object.entries(l)) { if (!AUTO_LIMIT_KEYS.includes(k)) errors.push(`auto.limits: unknown key "${k}"`); else if (typeof v !== 'number' || !(v >= 0 && v <= 100 || k === 'safety_margin_min')) errors.push(`auto.limits.${k} must be a number${k === 'safety_margin_min' ? '' : ' in 0..100'}`); }
+          const g = (k, d) => (typeof l[k] === 'number' ? l[k] : d);
+          if (g('soft_pct', 80) >= g('hard_pct', 95) || g('weekly_soft_pct', 90) >= g('weekly_hard_pct', 97)) errors.push('auto.limits: soft thresholds must stay below the hard ones');
+          if (g('hard_pct', 95) - g('reserve_pct', 5) <= g('soft_pct', 80)) errors.push('auto.limits: hard_pct - reserve_pct must stay above soft_pct');
+        }
+      }
+      const n = cfg.auto.notify;
+      if (n !== undefined) {
+        if (!isObj(n)) errors.push('auto.notify must be a map');
+        else {
+          for (const k of Object.keys(n)) if (!['channel', 'command'].includes(k)) errors.push(`auto.notify: unknown key "${k}"`);
+          if (n.channel !== undefined && !AUTO_NOTIFY_CHANNELS.includes(n.channel)) errors.push(`auto.notify.channel must be ${AUTO_NOTIFY_CHANNELS.join('|')}`);
+          if (n.channel === 'command' && !n.command) errors.push('auto.notify.channel=command needs auto.notify.command');
+        }
+      }
+    }
+  }
   const walk = (v, p) => {
     if (typeof v === 'string' && SECRET_VALUE.test(v)) errors.push(`${p}: looks like a secret; config must not store secrets`);
     else if (isObj(v)) for (const [k, x] of Object.entries(v)) { if (SECRET_KEY.test(k)) errors.push(`${p}.${k}: secret-like key; config must not store secrets`); walk(x, `${p}.${k}`); }
@@ -103,6 +131,11 @@ export function serializeConfig(cfg) {
     L.push('privacy:');
     if (cfg.privacy.default_sensitivity) L.push(`  default_sensitivity: ${scalar(cfg.privacy.default_sensitivity)}`);
     if (cfg.privacy.sensitive_globs) L.push(`  sensitive_globs: ${list(cfg.privacy.sensitive_globs)}`);
+  }
+  if (cfg.auto) {
+    L.push('auto:');
+    if (cfg.auto.limits) { L.push('  limits:'); for (const [k, v] of Object.entries(cfg.auto.limits)) L.push(`    ${k}: ${scalar(v)}`); }
+    if (cfg.auto.notify) { L.push('  notify:'); for (const [k, v] of Object.entries(cfg.auto.notify)) if (v !== null && v !== undefined) L.push(`    ${k}: ${scalar(v)}`); }
   }
   if (cfg.updated) L.push(`updated: ${scalar(cfg.updated)}`);
   return `${L.join('\n')}\n`;
