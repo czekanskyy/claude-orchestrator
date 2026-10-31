@@ -11,7 +11,7 @@ import { scanTextForSensitivePaths } from './lib/privacy.mjs';
 const SIMPLE = ['typo', 'literówk', 'kolor', 'color', 'colour', 'padding', 'margin', 'margines', 'odstęp', 'spacing', 'font', 'czcionk', 'label', 'etykiet', 'tooltip', 'placeholder', 'rename', 'zmień nazw', 'zmien nazw', 'ikon', 'icon', 'wyrównaj', 'align', 'border', 'ramk', 'shadow', 'cień', 'radius', 'zaokrągl', 'wording', 'napis', 'treść komunikat', 'button text', 'tekst przycisk'];
 const COMPLEX = ['architect', 'architektur', 'migrat', 'migrac', 'schema', 'schemat', 'integrat', 'integracj', 'redesign', 'przeprojektuj', 'zaprojektuj', 'refactor', 'refaktor', 'new module', 'nowy moduł', 'nowego modułu', 'race condition', 'root cause', 'przyczyn', 'flaky', 'intermittent', 'investigate', 'zbadaj', 'performance', 'wydajno', 'authenticat', 'uwierzytel', 'authoriz', 'autoryzac', 'payment', 'płatno', 'billing', 'websocket', 'concurren', 'współbieżn'];
 const HUGE = ['entire codebase', 'whole codebase', 'whole repo', 'entire repo', 'across the repo', 'every module', 'all modules', 'from scratch', 'rewrite', 'full migration', 'multi-phase', 'phase 1', 'roadmap', 'cały projekt', 'całą aplikac', 'całe repo', 'wszystkie moduł', 'od zera', 'przepisz', 'etap 1', 'faza 1', 'w całym repo'];
-const AMBIGUOUS = ['nie wiem', 'jakoś', 'jakos', 'not sure', 'maybe', 'tbd', 'do ustalenia', 'ewentualnie', 'or something', 'best way', 'jak najlepiej', 'which approach', 'zaproponuj', 'propose', 'what do you think', 'co sądzisz'];
+const AMBIGUOUS = ['nie wiem', 'nie jestem pewn', 'czy lepiej', 'czy warto', 'not certain', 'wondering', 'jakoś', 'jakos', 'not sure', 'maybe', 'tbd', 'do ustalenia', 'ewentualnie', 'or something', 'best way', 'jak najlepiej', 'which approach', 'zaproponuj', 'propose', 'what do you think', 'co sądzisz'];
 const CRITICAL = ['auth', 'uwierzytel', 'autoryz', 'login', 'logowan', 'hasł', 'password', 'role', 'uprawnien', 'permission', 'payment', 'płatno', 'billing', 'stripe', 'migrat', 'schema', 'schemat', 'drop table', 'delete data', 'usuwanie danych', 'production', 'produkcj', 'deploy', 'wdroż', 'secret', 'sekret', 'token', 'api key', 'klucz', 'encrypt', 'szyfrow', 'gdpr', 'rodo', 'race condition', 'concurren', 'współbieżn', 'security', 'bezpiecze', 'ci/cd', 'public api', 'breaking change'];
 const SENSITIVE = ['password', 'hasł', 'secret', 'sekret', 'token', 'api key', 'apikey', 'credential', 'klucz api', 'private key', 'klucz prywatn', '.env', 'customer data', 'dane klient', 'personal data', 'dane osobow', 'pii', 'pesel', 'rodo', 'gdpr', 'confidential', 'poufn', 'production database', 'baza produkcyjn', 'prod db', 'patient', 'pacjent'];
 const DOCS = ['readme', 'documentation', 'dokumentac', 'changelog', 'license', 'licencj', 'comment', 'komentarz'];
@@ -47,7 +47,7 @@ export function triage(text, reg = loadRegistry()) {
     if (f.items >= 3) complexWhy.push(`${f.items} list items`);
     if (f.files.length >= 4) complexWhy.push(`${f.files.length} files named`);
     if (f.complex.length) complexWhy.push(`topic: ${f.complex.join(', ')}`);
-    if (f.ambiguity >= 2 || (f.ambiguity >= 1 && f.words >= 40)) complexWhy.push('open questions in the request');
+    if (f.ambiguity >= 1 || f.questions >= 2 || (f.questions >= 1 && f.words >= 40)) complexWhy.push('open questions in the request');
     if (f.critical.length) complexWhy.push(`touches: ${f.critical.join(', ')}`);
     cls = complexWhy.length ? 'complex' : 'simple';
     reasons.push(...(complexWhy.length ? complexWhy : [f.simple.length ? `small change: ${f.simple.join(', ')}` : `short and concrete (${f.words} words)`]));
@@ -65,7 +65,7 @@ export function triage(text, reg = loadRegistry()) {
   return {
     class: cls, confidence, sensitivity, critical, risk_hint, reasons,
     sensitivity_why: sensitivity === 'sensitive' ? [...pathHits.map((h) => h.file), ...f.sensitive] : [],
-    signals: { words: f.words, items: f.items, files: f.files.length, simple: f.simple.length, complex: f.complex.length, huge: f.huge.length, ambiguity: f.ambiguity, critical: f.critical },
+    signals: { words: f.words, items: f.items, files: f.files.length, simple: f.simple.length, complex: f.complex.length, huge: f.huge.length, ambiguity: f.ambiguity, questions: f.questions, critical: f.critical },
     note: confidence === 'low' ? 'Mixed signals: decide yourself (routing.md §1).' : 'Proposal only: override when you know better.',
   };
 }

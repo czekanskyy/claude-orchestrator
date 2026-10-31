@@ -7,7 +7,8 @@
   "complex": [
     "Dodaj logowanie przez Google: zmiany w schemacie bazy, middleware i UI. Nie wiem czy session czy JWT?",
     "The checkout test is flaky and fails intermittently on CI. Find the root cause and fix it.",
-    "Add CSV export to the reports page with filters and a permission check per role"
+    "Add CSV export to the reports page with filters and a permission check per role",
+    "Dodaj eksport listy elementów do CSV z linii poleceń, z filtrem po nazwie i poprawnym cytowaniem wartości. Nie jestem pewien, czy lepiej strumieniowo, czy w pamięci, bo lista może urosnąć do kilkudziesięciu tysięcy pozycji."
   ],
   "huge": [
     "Przepisz całą aplikację z JavaScript na TypeScript",
@@ -19,7 +20,16 @@
     "Fix the loader that reads config/credentials.json",
     "Napraw eksport danych klientów do CSV (dane osobowe, PESEL)"
   ],
-  "not_sensitive": ["Fix the typo in README.md", "Zmień kolor przycisku Zapisz na niebieski"],
-  "critical": ["Add refunds to the billing module", "Napraw logowanie i uprawnienia użytkowników"],
-  "not_critical": ["Zmień kolor przycisku Zapisz na niebieski", "Fix the typo in README.md"]
+  "not_sensitive": [
+    "Fix the typo in README.md",
+    "Zmień kolor przycisku Zapisz na niebieski"
+  ],
+  "critical": [
+    "Add refunds to the billing module",
+    "Napraw logowanie i uprawnienia użytkowników"
+  ],
+  "not_critical": [
+    "Zmień kolor przycisku Zapisz na niebieski",
+    "Fix the typo in README.md"
+  ]
 }
