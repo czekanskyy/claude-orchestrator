@@ -1,5 +1,14 @@
 # Changelog: orchestrator registry
 
+## 2026-10-31: v3.1.0 (workflow: triage, prompt-creator, personas, silence, low-trust review)
+- Triage first: `scripts/triage.mjs` proposes simple / complex / huge, `sensitivity` and `critical` from deterministic signals (zero tokens); the model keeps the judgment. Rubric and split criteria: `routing.md` §1, §10, §11.
+- New task type `spec` and agent `prompt-creator` (complex path). The router picks the tier: light models score `spec: 2`, below the floor of 3, so it resolves to a standard model at medium effort. Read-only repo access plus doc lookup; batched Q&A through the orchestrator (subagents have no AskUserQuestion: `questions[]`, then SendMessage resume, max 3 rounds); writes `runs/<run>/prompt.md`.
+- Huge path: split into self-contained `part-N.md` (`templates/split.md`, `run.mjs lint-prompt --part`); the main thread keeps only the ledger.
+- `scripts/run.mjs`: run directory + ledger (waves, deterministic personas, status, decisions, fallbacks, reviews), assignment and status tables, final report (35-line cap, pools and commits auto-filled), prompt lint. `scripts/dryrun.mjs`: path + personas + tables with zero model calls. New templates: `assignment`, `status`, `review`, `split`; `report` rewritten.
+- Silence policy in SKILL.md: only the assignment table, status tables, questions, blockers and the final report reach the user.
+- Review: low context (brief + criteria + diff only), low trust (fallible-author preamble; `file:line`, failure scenario, confidence; capped findings; `Checked:` list), disputed findings settled by a cheap runnable check, trivial S/low-risk changes exempt, max two fix rounds. See `references/review.md`.
+- `scripts/egm-gate.mjs`: the `egm_gate` extension point between prompt-ready and planning (placeholder: always not-critical).
+
 ## 2026-10-31: v3.0.0 (plugin, config, privacy, Gemini)
 - Packaged as the single plugin `orchestrator` (marketplace `czekanskyy-tools`): skills `orchestrate`, `configure`, `doctor`, `update`; agents `orchestrator:orch-*`. v2 skills and agents are replaced (backup in `~/.claude/orchestrator/backup-v2-<date>`).
 - Registry schema 2: families → plans catalog with `data_policy` (training_on_data, sensitive_ok, source, checked). Plan ids equal the v2 pool ids, so history survives. User choices live in `~/.claude/orchestrator/config.yaml` (no secrets); without it only the main family is enabled and nothing sensitive leaves it.
