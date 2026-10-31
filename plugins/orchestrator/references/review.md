@@ -1,0 +1,11 @@
+# Review protocol (general, not EGM)
+
+Why: models review their own family's output too kindly, and long histories bias a reviewer toward the author's reasoning. A fresh, suspicious, narrowly briefed reviewer finds more real defects per token. Community experience agrees that review loops must be capped and severity-gated, or they bikeshed (r/ClaudeAI "token maxxing" thread: reviewer strength matters most, loops must be gated by severity).
+
+1. **Who reviews.** Another primary family (never the author's). Plans of L/high-risk work: the same. Exempt: dictated, low-risk mechanical, trivial (S, low risk).
+2. **What the reviewer sees.** Brief (Goal + Scope), numbered acceptance criteria, the diff or file list. For a plan: the plan and the criteria only. Never the author's reasoning, session, previous findings or the orchestrator's opinion. Build it from `templates/review.md`; send it as a prompt file (adapters) or as the agent prompt (Claude).
+3. **Stance.** The preamble states fallible author and assumed defects. The output contract caps noise: ≤ 5 findings by severity, each `file:line · severity · confidence · failure scenario`; "no findings" only with a `Checked:` list of ≥ 3 concrete things; no style nits unless the repo's rules demand them; ≤ 15 lines.
+4. **Triage of findings (orchestrator).** `high`/`med` severity with `high`/`med` confidence → fix. Anything doubtful or disputed → run the cheapest runnable check first (`orch-runner`: a test, `git grep`, a type check, a one-line script). Refuted → rejected (counted in the report). Only then, and only for a high-risk disagreement, spend another model round or ask the user.
+5. **Rounds.** Fixes go to the author's resumed session. Round 2 re-checks only the fixes and only for `high`/`med`. After round 2 the orchestrator decides or asks. Never loop to "consensus".
+6. **Record.** `run.mjs review --run D --by <reviewer> --of <author> --high n --med n --low n --fixed n --rejected n`; the final report prints count, severity and resolution.
+7. **Guard rails against over-caution.** Reviewer effort follows the effort matrix; raise it for risk high only. Do not review what checks already prove. Do not stack a second family on medium risk.

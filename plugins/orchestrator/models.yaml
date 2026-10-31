@@ -35,7 +35,7 @@ meta:
   main_family: claude
   # Per-project overrides: <repo>/.claude/orchestrator.yaml is deep-merged over this file
   # (objects merge, lists replace). A `config:` block there overrides the user config for that repo.
-  task_types: [implement, refactor, debug, test, review, plan, research, mechanical]
+  task_types: [implement, refactor, debug, test, review, plan, research, mechanical, spec]
   # Task sensitivity: none (public/low value), internal (private code, no secrets/PII), sensitive (secrets, PII,
   # credentials, customer or regulated data). sensitive tasks only run on families whose data policy has sensitive_ok.
   sensitivity_levels: [none, internal, sensitive]
@@ -51,6 +51,7 @@ meta:
     review: orch-reviewer
     plan: orch-planner
     research: orch-researcher
+    spec: prompt-creator
   security_review_agent: orch-security-reviewer
 
 families:
@@ -301,7 +302,7 @@ models:
     tools: {edit: true, shell: true, web: true}
     strengths: "Very fast and cheap. Mechanical edits, simple tests, lookups, summarizing."
     weaknesses: "Weak at multi-file reasoning and hard debugging."
-    suitability: {implement: 2, refactor: 2, debug: 2, test: 3, review: 2, plan: 2, research: 3, mechanical: 4}
+    suitability: {implement: 2, refactor: 2, debug: 2, test: 3, review: 2, plan: 2, spec: 2, research: 3, mechanical: 4}
     verified_at: "2026-10-28"
     sources:
       - "https://platform.claude.com/docs/en/about-claude/models/overview"
@@ -323,7 +324,7 @@ models:
     tools: {edit: true, shell: true, web: true}
     strengths: "Best speed/intelligence balance. Strong everyday coding, review and planning."
     weaknesses: "Below Opus on long-horizon architecture and the hardest bugs."
-    suitability: {implement: 4, refactor: 4, debug: 4, test: 4, review: 4, plan: 4, research: 4, mechanical: 4}
+    suitability: {implement: 4, refactor: 4, debug: 4, test: 4, review: 4, plan: 4, spec: 4, research: 4, mechanical: 4}
     verified_at: "2026-10-28"
     sources:
       - "https://platform.claude.com/docs/en/about-claude/models/overview"
@@ -344,7 +345,7 @@ models:
     tools: {edit: true, shell: true, web: true}
     strengths: "Long-running agentic coding, architecture, hard debugging, critical review."
     weaknesses: "About 2x Sonnet usage. Separate Opus limit messages exist on subscriptions."
-    suitability: {implement: 5, refactor: 5, debug: 5, test: 4, review: 5, plan: 5, research: 4, mechanical: 3}
+    suitability: {implement: 5, refactor: 5, debug: 5, test: 4, review: 5, plan: 5, spec: 5, research: 4, mechanical: 3}
     note: "Available on Pro in Claude Code (default model since CC v2.1.280)."
     verified_at: "2026-10-28"
     sources:
@@ -368,7 +369,7 @@ models:
     tools: {edit: true, shell: true, web: true}
     strengths: "Fast and very cheap (350-3000 msgs/5h on Plus). Mechanical edits, simple tests, quick lookups."
     weaknesses: "Shallow reasoning. Not for design or risky changes."
-    suitability: {implement: 2, refactor: 3, debug: 2, test: 3, review: 2, plan: 2, research: 3, mechanical: 4}
+    suitability: {implement: 2, refactor: 3, debug: 2, test: 3, review: 2, plan: 2, spec: 2, research: 3, mechanical: 4}
     verified_at: "2026-10-28"
     sources:
       - "codex debug models --bundled (codex-cli 0.164.0)"
@@ -389,7 +390,7 @@ models:
     tools: {edit: true, shell: true, web: true}
     strengths: "Balanced and cheaper than Sol (35-285 msgs/5h on Plus). Straightforward implementation and tests."
     weaknesses: "Below Sol on hard problems."
-    suitability: {implement: 3, refactor: 3, debug: 3, test: 4, review: 3, plan: 3, research: 3, mechanical: 4}
+    suitability: {implement: 3, refactor: 3, debug: 3, test: 4, review: 3, plan: 3, spec: 3, research: 3, mechanical: 4}
     verified_at: "2026-10-28"
     sources:
       - "https://learn.chatgpt.com/docs/pricing"
@@ -409,7 +410,7 @@ models:
     tools: {edit: true, shell: true, web: true}
     strengths: "Latest workhorse coding model. DeepSWE 1.1 at 75.0% (vendor), close to Astra at about 1/5 the price."
     weaknesses: "ultra effort self-delegates (never auto)."
-    suitability: {implement: 5, refactor: 4, debug: 4, test: 4, review: 4, plan: 4, research: 4, mechanical: 4}
+    suitability: {implement: 5, refactor: 4, debug: 4, test: 4, review: 4, plan: 4, spec: 4, research: 4, mechanical: 4}
     verified_at: "2026-10-28"
     sources:
       - "codex debug models --bundled (codex-cli 0.164.0)"
@@ -431,7 +432,7 @@ models:
     tools: {edit: true, shell: true, web: true}
     strengths: "Frontier intelligence: hardest design, debugging and critical review."
     weaknesses: "Only 5-45 msgs/5h on Plus. Use for heavy-tier work with a justification."
-    suitability: {implement: 5, refactor: 5, debug: 5, test: 4, review: 5, plan: 5, research: 4, mechanical: 3}
+    suitability: {implement: 5, refactor: 5, debug: 5, test: 4, review: 5, plan: 5, spec: 5, research: 4, mechanical: 3}
     verified_at: "2026-10-28"
     sources:
       - "codex debug models --bundled (codex-cli 0.164.0)"
@@ -456,7 +457,7 @@ models:
     strengths: "xAI frontier coding model. Function calling, structured outputs. DeepSWE 71.0% (vendor)."
     weaknesses: "Behind the top Claude/GPT models. Uses about 2x the tokens of 4.6."
     note: "Default model in grok CLI 1.0.70 after login (legacy SuperGrok). Smoke test OK 2026-10-27 (effort low)."
-    suitability: {implement: 3, refactor: 3, debug: 3, test: 3, review: 3, plan: 3, research: 4, mechanical: 3}
+    suitability: {implement: 3, refactor: 3, debug: 3, test: 3, review: 3, plan: 3, spec: 3, research: 4, mechanical: 3}
     api_rate_limits: "150 rps, 50M TPM (API only, not the subscription pool)"
     verified_at: "2026-10-28"
     sources:
@@ -482,7 +483,7 @@ models:
     strengths: "Fast, cheap, large-context Flash model. Research, extra review rounds, simple tasks."
     weaknesses: "Not verified for hard debugging. Consumer plans: no sensitive data. Shell commands are denied unless allowed in agy settings."
     note: "Promoted to active after `doctor --live` answered through agy 1.4.12 on 2026-10-31 (~8k tokens per call, mostly CLI overhead)."
-    suitability: {implement: 3, refactor: 3, debug: 3, test: 3, review: 3, plan: 3, research: 4, mechanical: 3}
+    suitability: {implement: 3, refactor: 3, debug: 3, test: 3, review: 3, plan: 3, spec: 3, research: 4, mechanical: 3}
     verified_at: "2026-10-31"
     sources:
       - "agy models (agy 1.4.12, 2026-10-31)"

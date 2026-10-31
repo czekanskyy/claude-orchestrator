@@ -276,9 +276,11 @@ export function route(reg, tasks, { pools } = {}) {
     bump(c);
     assignments.push({ ...t, kind: 'author', sensitivity: sens.level, privacy_notes: privacyNotes, ...c });
     const producesCode = t.produces_code ?? CODE_TYPES.includes(t.type);
-    const exempt = t.dictated || (t.type === 'mechanical' && t.risk === 'low');
+    // Review by risk: dictated text, low-risk mechanical edits and trivial (S, low-risk) code changes are verified by checks + diff skim.
+    const trivial = t.risk === 'low' && t.complexity === 'S' && CODE_TYPES.includes(t.type);
+    const exempt = t.dictated || (t.type === 'mechanical' && t.risk === 'low') || trivial;
     if (exempt) {
-      assignments[assignments.length - 1].verification = 'exempt from cross-review: verify by checks + diff skim';
+      assignments[assignments.length - 1].verification = `exempt from cross-review (${t.dictated ? 'dictated' : trivial ? 'trivial: S, low risk' : 'mechanical, low risk'}): verify by checks + diff skim`;
       continue;
     }
     if (producesCode || t.type === 'plan') {
