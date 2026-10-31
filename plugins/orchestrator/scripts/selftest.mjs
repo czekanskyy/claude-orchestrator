@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Self-tests. No real model calls and none of the user's state: isolated ORCH_HOME/ORCH_CONFIG, --simulate and a mock agy.
-// Usage: node selftest.mjs [all|dryrun|fallback|escalate|update-detect|resume|overlay|accounts|gemini|privacy|config|doctor|update|migrate|guard|triage|flow|render|init] [--verbose]
+// Usage: node selftest.mjs [all|dryrun|fallback|escalate|update-detect|resume|overlay|accounts|gemini|privacy|config|doctor|update|migrate|guard|triage|flow|render|init|auto] [--verbose]
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -883,7 +883,9 @@ async function initScenario() {
   check('init', 'orchestrate and configure only gain a few lines that point to init', /orchestrator:init/.test(skill('orchestrate')) && /orchestrator:init/.test(skill('configure')) && skill('orchestrate').length < 10500 && fs.existsSync(path.join(PLUGIN, 'references', 'repo-init.md')));
 }
 
-const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario, init: initScenario };
+// autonomous mode: its own file (engine on temp repos, simulated clock, fake workers and usage feeds)
+const autoScenarioRun = async () => (await import('./selftest-auto.mjs')).autoScenario({ check, TMP, HERE, common, log });
+const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario, init: initScenario, auto: autoScenarioRun };
 for (const [name, fn] of Object.entries(runs)) if (which === 'all' || which === name) await fn();
 
 log('\n=== RESULTS ===');
