@@ -1,0 +1,25 @@
+{
+  "simple": [
+    "Zmień kolor przycisku Zapisz na niebieski",
+    "Fix the typo in README.md",
+    "Add a --verbose flag to scripts/build.mjs that prints timings"
+  ],
+  "complex": [
+    "Dodaj logowanie przez Google: zmiany w schemacie bazy, middleware i UI. Nie wiem czy session czy JWT?",
+    "The checkout test is flaky and fails intermittently on CI. Find the root cause and fix it.",
+    "Add CSV export to the reports page with filters and a permission check per role"
+  ],
+  "huge": [
+    "Przepisz całą aplikację z JavaScript na TypeScript",
+    "Migrate all modules to the new validation layer from scratch, update the docs and add e2e tests",
+    "Roadmap:\n1. Extract the API client\n2. Add retry policy\n3. Move state to a store\n4. Rewrite the router\n5. Add i18n\n6. Replace the form library\n7. Add e2e tests\n8. Update the docs"
+  ],
+  "sensitive": [
+    "Rotate the password in .env.production",
+    "Fix the loader that reads config/credentials.json",
+    "Napraw eksport danych klientów do CSV (dane osobowe, PESEL)"
+  ],
+  "not_sensitive": ["Fix the typo in README.md", "Zmień kolor przycisku Zapisz na niebieski"],
+  "critical": ["Add refunds to the billing module", "Napraw logowanie i uprawnienia użytkowników"],
+  "not_critical": ["Zmień kolor przycisku Zapisz na niebieski", "Fix the typo in README.md"]
+}

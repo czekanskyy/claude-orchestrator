@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Self-tests. No real model calls and none of the user's state: isolated ORCH_HOME/ORCH_CONFIG, --simulate and a mock agy.
-// Usage: node selftest.mjs [all|dryrun|fallback|escalate|update-detect|resume|overlay|accounts|gemini|privacy|config|doctor|update|migrate|guard] [--verbose]
+// Usage: node selftest.mjs [all|dryrun|fallback|escalate|update-detect|resume|overlay|accounts|gemini|privacy|config|doctor|update|migrate|guard|triage|flow|render] [--verbose]
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -487,14 +487,155 @@ function migrate() {
 // ---------------------------------------------------------------- v3: entry-point guard (importing never starts a CLI)
 function guard() {
   log('\n=== ENTRY-POINT GUARD ===');
-  const scripts = ['run-codex.mjs', 'run-grok.mjs', 'run-gemini.mjs', 'doctor.mjs', 'update.mjs', 'configure.mjs', 'migrate.mjs', 'registry.mjs', 'usage.mjs'];
+  const scripts = ['run-codex.mjs', 'run-grok.mjs', 'run-gemini.mjs', 'doctor.mjs', 'update.mjs', 'configure.mjs', 'migrate.mjs', 'registry.mjs', 'usage.mjs', 'triage.mjs', 'run.mjs', 'dryrun.mjs', 'egm-gate.mjs'];
   for (const s of scripts) {
     const r = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(pathToFileURL(path.join(HERE, s)).href)}); console.log('imported')`], { encoding: 'utf8', env: process.env, timeout: 20000 });
     check('guard', `${s}: import has no side effects`, r.status === 0 && r.stdout.trim() === 'imported', (r.stdout + r.stderr).slice(0, 150));
   }
 }
 
-const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, privacy, config, doctor: doctorOffline, update, migrate, guard };
+// ---------------------------------------------------------------- v3 workflow: triage, personas, tables, report, run ledger
+const fx = (n) => JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', n), 'utf8'));
+const triageLib = await import(pathToFileURL(path.join(HERE, 'triage.mjs')).href);
+const renderLib = await import(pathToFileURL(path.join(HERE, 'lib', 'render.mjs')).href);
+const dryLib = await import(pathToFileURL(path.join(HERE, 'dryrun.mjs')).href);
+const gateLib = await import(pathToFileURL(path.join(HERE, 'egm-gate.mjs')).href);
+const evenPools = () => {
+  const reg = common.loadRegistry();
+  return Object.fromEntries(common.allPoolStatus(reg).map((p) => [p.pool, { ...p, pct: 20, level: 'ok', windows: [{ ...p.windows[0], pct: 20 }], model_cooldowns: {} }]));
+};
+
+function triageScenario() {
+  log('\n=== TRIAGE (deterministic, zero tokens) ===');
+  const reg = common.loadRegistry();
+  const f = fx('triage.json');
+  for (const cls of ['simple', 'complex', 'huge']) {
+    for (const text of f[cls]) {
+      const r = triageLib.triage(text, reg);
+      check('triage', `${cls}: "${text.replace(/\s+/g, ' ').slice(0, 48)}"`, r.class === cls, `got ${r.class} (${r.reasons.join('; ')})`);
+    }
+  }
+  for (const text of f.sensitive) check('triage', `sensitive: "${text.slice(0, 40)}"`, triageLib.triage(text, reg).sensitivity === 'sensitive');
+  for (const text of f.not_sensitive) check('triage', `not sensitive: "${text.slice(0, 40)}"`, triageLib.triage(text, reg).sensitivity !== 'sensitive');
+  for (const text of f.critical) check('triage', `critical: "${text.slice(0, 40)}"`, triageLib.triage(text, reg).critical === true);
+  for (const text of f.not_critical) check('triage', `not critical: "${text.slice(0, 40)}"`, triageLib.triage(text, reg).critical === false);
+  const mixed = triageLib.triage('Zmień kolor przycisku i zbadaj problem', reg);
+  check('triage', 'mixed signals lower the confidence (the model decides)', mixed.class === 'complex' && mixed.confidence === 'low', JSON.stringify(mixed));
+  check('triage', 'docs-only change is sensitivity none', triageLib.triage('Fix the typo in README.md', reg).sensitivity === 'none');
+  const cli = spawnSync(process.execPath, [path.join(HERE, 'triage.mjs'), '--text', 'Fix the typo in README.md'], { encoding: 'utf8', env: process.env });
+  check('triage', 'CLI prints one JSON line', cli.status === 0 && JSON.parse(cli.stdout).class === 'simple');
+  const g = gateLib.egmGate({ critical: true });
+  check('triage', 'egm_gate placeholder returns not-critical and continue (critical flag kept as candidate)', g.gate === 'egm_gate' && g.critical === false && g.action === 'continue' && g.candidate === true);
+}
+
+function flowScenario() {
+  log('\n=== FLOW: dry run per class, personas, privacy routing ===');
+  const reg = common.loadRegistry();
+  const f = fx('triage.json');
+  const plans = fx('dryrun-plans.json');
+  const pools = evenPools();
+  for (const cls of ['simple', 'complex', 'huge']) {
+    const prompt = f[cls][0];
+    const d = dryLib.dryRun(reg, prompt, { tasks: plans[cls], pools });
+    log(`\n--- dry run (${cls}): ${prompt.slice(0, 50)}\n${d.text}`);
+    check('flow', `${cls}: dry run chooses the ${cls} path with zero model calls`, d.path === cls && d.model_calls === 0);
+    check('flow', `${cls}: assignment table has Agent | Model · effort | Task and rows`, /\| Agent \| Model · effort \| Task \|/.test(d.text) && d.rows.length >= plans[cls].length);
+    check('flow', `${cls}: every dispatched row has a persona with an emoji`, d.rows.every((r) => /^\S+ \S+/.test(r.agent) && !/^[\w]/.test(r.agent)));
+    check('flow', `${cls}: personas are unique within the run`, new Set(d.rows.map((r) => r.agent)).size === d.rows.length, d.personas.join(', '));
+    check('flow', `${cls}: egm_gate continues`, d.gate.action === 'continue' && /egm_gate: continue/.test(d.text));
+    const again = dryLib.dryRun(reg, prompt, { tasks: plans[cls], pools });
+    check('flow', `${cls}: personas are deterministic`, JSON.stringify(again.personas) === JSON.stringify(d.personas));
+  }
+  const cx = dryLib.dryRun(reg, f.complex[0], { tasks: plans.complex, pools });
+  const spec = cx.rows.find((r) => r.role === 'prompt-creator');
+  check('flow', 'complex: wave 1 is the prompt-creator on a registry-chosen Claude standard model', spec && spec.wave === 1 && spec.model === 'claude-sonnet' && spec.dispatch?.subagent_type === 'orchestrator:prompt-creator', JSON.stringify(spec?.dispatch));
+  check('flow', 'complex: planned work starts after the spec wave', cx.rows.filter((r) => r.role !== 'prompt-creator').every((r) => r.wave > 1));
+  const hg = dryLib.dryRun(reg, f.huge[0], { pools });
+  check('flow', "huge: the split is the orchestrator's own step (no agent row)", hg.rows.length === 0 && /Split/.test(hg.text));
+
+  const names = Array.from({ length: 8 }, (_, i) => renderLib.persona('implementer', i));
+  check('flow', 'persona counter gives distinct names, then a numeric suffix', new Set(names).size === 8 && /\s2$/.test(names[6]), names.join(', '));
+
+  const sens = triageLib.triage(f.sensitive[0], reg);
+  const route = registry.route(reg, [
+    { id: 'S1', title: 'Rotate the production password', type: 'implement', complexity: 'S', risk: 'high', sensitivity: sens.sensitivity, files: ['.env.production'] },
+  ], { pools });
+  const used = route.assignments.filter((a) => a.family);
+  const bad = used.filter((a) => !reg.families[a.family].data_policy.sensitive_ok);
+  check('flow', 'sensitive example is triaged sensitive', sens.sensitivity === 'sensitive');
+  check('flow', 'sensitive example: every author/reviewer family has sensitive_ok (others excluded)', used.length > 0 && bad.length === 0, bad.map((a) => `${a.id}:${a.family}`).join(','));
+  const trivial = registry.route(reg, [{ id: 'T9', title: 'Tweak a label', type: 'implement', complexity: 'S', risk: 'low' }], { pools });
+  check('flow', 'trivial change (S, low risk) is exempt from cross-review', trivial.assignments.length === 1 && /trivial/.test(trivial.assignments[0].verification || ''));
+}
+
+function renderScenario() {
+  log('\n=== RENDER: tables, report cap, prompt lint, run ledger ===');
+  const reg = common.loadRegistry();
+  const rows = [
+    { id: 'T1', stage: 'Implement', agent: '🔨 Bartek', model: 'claude-sonnet', effort: 'medium', title: 'Add | pipe', status: 'done', note: 'ok' },
+    { id: 'T2', stage: 'Review', agent: '🧐 Rysiek', model: 'gpt-6.1-sol', effort: 'low', title: 'Review T1', status: 'progress', note: '' },
+    { id: 'T3', stage: 'Tests', agent: '🔨 Basia', model: 'claude-haiku', effort: 'low', title: 'Tests', status: 'pending', note: '' },
+    { id: 'T4', stage: 'Implement', agent: '🔨 Błażej', model: 'claude-sonnet', effort: 'low', title: 'x', status: 'attention', note: 'brak testów' },
+    { id: 'T5', stage: 'Implement', agent: '🔨 Bogdan', model: 'claude-sonnet', effort: 'low', title: 'x', status: 'failed', note: 'padł build' },
+  ];
+  const at = renderLib.assignmentTable(rows);
+  check('render', 'assignment table: header, separator, one row per agent, pipes escaped', at.split('\n').length === 2 + rows.length && /\| Agent \| Model · effort \| Task \|/.test(at) && /Add \\\| pipe/.test(at), at);
+  const st = renderLib.statusTable(rows, ['a', 'b', 'c', 'd', 'e']);
+  check('render', 'status table: all five status icons', ['✅', '🔄', '⏳', '⚠️', '❌'].every((i) => st.includes(i)));
+  check('render', 'status table: summary capped at 3 lines', st.split('\n').filter((l) => l.startsWith('- ')).length === 3 && st.includes('|\n\n- a'));
+
+  const data = {
+    result: 'done', title: 'Eksport CSV', summary: 'Dodano przycisk i endpoint.',
+    done: ['Endpoint /export (Sonnet, medium)', 'Przycisk w UI (Bartek)', 'Testy jednostkowe'],
+    tests: ['npm test: 42/42 ✅'], not_done: ['Eksport XLSX (poza zakresem)'],
+    decisions: ['Separator „,” i UTF-8', 'Bez nowych zależności'],
+    reviews: [{ by: 'GPT', of: 'Claude', high: 1, med: 1, low: 0, fixed: 1, rejected: 1, note: 'jedno obalone testem' }],
+    fallbacks: [], pool: 'claude_team 40% (+3 pp)', commits: ['a1b2c3d Add CSV export'],
+  };
+  const r = renderLib.renderReport(data);
+  log(r.text);
+  check('render', `report renders within the cap (${r.lines} of ${r.cap} lines)`, !r.over_cap && r.lines <= 35 && r.lines >= 12);
+  check('render', 'report has every required block', ['Wynik', 'Co zrobiono', 'Testy', 'Nie zrobiono', 'Decyzje podjęte za Ciebie', 'Review innych modeli', 'Fallbacki', 'Pule', 'Commity'].every((s) => r.text.includes(s)));
+  check('render', 'report computes the review line (count, severity, resolution)', /GPT → Claude: 2 znaleziska \(1 wysokich · 1 średnich · 0 niskich\); naprawiono 1, odrzucono 1/.test(r.text));
+  const empty = renderLib.renderReport({ result: 'partial', title: 'x', summary: 'y', done: ['a'] });
+  check('render', 'empty lists fall back to "brak" / "nic"', /### Nie zrobiono\n- nic/.test(empty.text) && /Fallbacki:\*\* brak/.test(empty.text));
+  const big = renderLib.renderReport({ ...data, done: Array.from({ length: 30 }, (_, i) => `krok ${i}`) });
+  check('render', 'an oversized report is flagged over_cap', big.over_cap && big.lines > 35);
+
+  const goodPrompt = '## Goal\nAdd CSV export to the reports page.\n\n## Context\nReports live in src/reports; see CLAUDE.md for conventions and the test command npm test. The export must respect the active filters and the existing permission checks of the page.\n\n## Scope and constraints\nEdit only src/reports and test/reports. Workers do not commit.\n\n## Done criteria and verification\n1. The button downloads the filtered rows as UTF-8 CSV.\n2. npm test passes.\n\n## Autonomy and reporting\nPick sensible defaults; report assumptions, what was verified and what is left.\n';
+  check('render', 'prompt lint accepts a complete self-contained prompt', renderLib.lintPrompt(goodPrompt).ok, JSON.stringify(renderLib.lintPrompt(goodPrompt)));
+  check('render', 'prompt lint rejects missing sections and "as discussed"', !renderLib.lintPrompt('## Goal\nDo it as discussed in the previous session.').ok);
+  check('render', 'part lint needs an Expects section', !renderLib.lintPrompt(goodPrompt, { part: true }).ok && renderLib.lintPrompt(goodPrompt.replace('## Context', '## Expects\nnothing: first part\n\n## Context'), { part: true }).ok);
+
+  const repo = path.join(TMP, 'ledger-repo');
+  fs.mkdirSync(repo, { recursive: true });
+  const git = (...a) => spawnSync('git', a, { cwd: repo, encoding: 'utf8' });
+  git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  fs.writeFileSync(path.join(repo, 'a.txt'), '1'); git('add', '.'); git('commit', '-qm', 'base');
+  const run = (...args) => spawnSync(process.execPath, [path.join(HERE, 'run.mjs'), ...args], { encoding: 'utf8', env: process.env });
+  const init = JSON.parse(run('init', '--slug', 'selftest', '--repo', repo).stdout);
+  const routeFile = path.join(TMP, 'route.json');
+  fs.writeFileSync(routeFile, JSON.stringify(registry.route(reg, fx('dryrun-plans.json').complex, { pools: evenPools() })));
+  const plan = JSON.parse(run('plan', '--run', init.dir, '--route', routeFile).stdout);
+  check('render', 'run.mjs plan builds waves into the ledger', plan.added >= 3 && plan.waves >= 2, JSON.stringify(plan));
+  const w1 = JSON.parse(run('assign', '--run', init.dir, '--json').stdout);
+  check('render', 'assign shows the first wave, marks it in progress, gives persona descriptions', w1.wave === 1 && /^\S+ \S+: T1/.test(w1.dispatch[0].description) && w1.dispatch[0].via && w1.table.includes('| Agent |'), JSON.stringify(w1.dispatch[0]));
+  check('render', 'assign does not hand out the same rows twice', run('assign', '--run', init.dir, '--wave', '1').status !== 0);
+  run('set', '--run', init.dir, 'T1', '--status', 'done', '--note', 'ok');
+  const status = run('status', '--run', init.dir, '--summary', 'Fala 1 gotowa').stdout;
+  check('render', 'status table reflects set + summary', status.includes('✅') && status.includes('Fala 1 gotowa'));
+  run('note', '--run', init.dir, '--kind', 'decision', 'Wybrano', 'JWT'); run('note', '--run', init.dir, '--kind', 'fallback', 'GPT → Claude (limit)');
+  run('review', '--run', init.dir, '--by', 'GPT', '--of', 'Claude', '--high', '1', '--fixed', '1');
+  fs.writeFileSync(path.join(repo, 'a.txt'), '2'); git('add', '.'); git('commit', '-qm', 'Add feature');
+  const repFile = path.join(TMP, 'report.json');
+  fs.writeFileSync(repFile, JSON.stringify({ result: 'done', title: 'T', summary: 's', done: ['x'], tests: ['ok'] }));
+  const rep = run('report', '--run', init.dir, '--data', repFile, '--strict');
+  check('render', 'report fills decisions, fallbacks, reviews, pools and commits from the ledger and git', rep.status === 0 && /Wybrano JWT/.test(rep.stdout) && /GPT → Claude \(limit\)/.test(rep.stdout) && /GPT → Claude: 1 znalezisko/.test(rep.stdout) && /Add feature/.test(rep.stdout) && !/base/.test(rep.stdout) && /\*\*Pule:\*\*/.test(rep.stdout), rep.stdout + rep.stderr);
+  const lp = path.join(TMP, 'prompt.md'); fs.writeFileSync(lp, goodPrompt);
+  check('render', 'run.mjs lint-prompt exit codes', run('lint-prompt', lp).status === 0 && run('lint-prompt', brief).status !== 0);
+}
+
+const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario };
 for (const [name, fn] of Object.entries(runs)) if (which === 'all' || which === name) await fn();
 
 log('\n=== RESULTS ===');

@@ -1,0 +1,16 @@
+{
+  "simple": [
+    { "id": "T1", "title": "Change the Save button colour", "type": "implement", "complexity": "S", "risk": "low", "files": ["src/ui/Button.css"] },
+    { "id": "T2", "title": "Update the button label snapshot", "type": "test", "complexity": "S", "risk": "low", "deps": ["T1"], "files": ["test/button.test.js"] }
+  ],
+  "complex": [
+    { "id": "T1", "title": "Google OAuth callback and session", "type": "implement", "complexity": "M", "risk": "high", "files": ["src/auth/google.ts"] },
+    { "id": "T2", "title": "Users table: add provider column", "type": "implement", "complexity": "M", "risk": "high", "files": ["db/migrations/0042_provider.sql"], "deps": ["T1"] },
+    { "id": "T3", "title": "Login button and error states", "type": "implement", "complexity": "S", "risk": "med", "files": ["src/ui/Login.tsx"], "deps": ["T1"] }
+  ],
+  "huge": [
+    { "id": "P1", "title": "Part 1: TypeScript config and build", "type": "implement", "complexity": "M", "risk": "med", "files": ["tsconfig.json"] },
+    { "id": "P2", "title": "Part 2: convert src/lib", "type": "refactor", "complexity": "M", "risk": "med", "files": ["src/lib/index.ts"], "deps": ["P1"] },
+    { "id": "P3", "title": "Part 3: convert src/ui", "type": "refactor", "complexity": "M", "risk": "med", "files": ["src/ui/App.tsx"], "deps": ["P1"] }
+  ]
+}

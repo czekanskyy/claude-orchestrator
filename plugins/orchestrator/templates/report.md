@@ -1,24 +1,23 @@
-## Status report: {{task_title}}
-
-**Result:** {{✅ done | ⚠️ partial | ❌ stopped}}, {{one sentence}}
-
-### What was done
-| subtask | who (model · effort) | result |
-|---|---|---|
-| {{id: title}} | {{model}} · {{effort}} | {{ok / fixed after review / failed}} |
-
-### Verification
-- {{tests: X/Y passed · lint: ok · build: ok · diff: N files}}
-
-### Cross-reviews
-- {{reviewer model}} → {{author family}}: {{number of findings, what was fixed}}
-
-### Problems and fallbacks
-- {{e.g. "Fallback: gpt-6.1-sol → claude-sonnet (Plus limit, cooldown until 18:20)"}} / none
-
-### Pool state
-{{usage.mjs status --md}}
-<!-- ~ = estimate; Claude is exact (statusline) -->
-
-### Next steps
-- {{what's left / what needs a decision}}
+<!-- Final report, Polish, hard cap 35 lines (enforced by `run.mjs report`). One line per list item; fields come from the report JSON. -->
+## {{icon}} {{title}}
+**Wynik:** {{label}}. {{summary}}
+### Co zrobiono i jak
+{{#done}}- {{.}}
+### Testy
+{{#tests}}- {{.}}
+{{^tests}}- nie uruchamiano (brak testów w repo)
+### Nie zrobiono
+{{#not_done}}- {{.}}
+{{^not_done}}- nic
+### Decyzje podjęte za Ciebie
+{{#decisions}}- {{.}}
+{{^decisions}}- brak
+### Review innych modeli
+{{#reviews}}- {{.}}
+{{^reviews}}- nie dotyczy
+### Fallbacki i pule
+- **Fallbacki:** {{fallbacks}}
+- **Pule:** {{pool}}
+### Commity
+{{#commits}}- `{{.}}`
+{{^commits}}- brak
