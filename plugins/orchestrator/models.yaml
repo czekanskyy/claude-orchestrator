@@ -1,0 +1,489 @@
+# Orchestrator model registry: the SINGLE source of truth for families, plan catalog, models and effort levels.
+# User choices (which families/plans/privacy) live OUTSIDE the plugin in ~/.claude/orchestrator/config.yaml
+# (written by /orchestrator:configure); this file is the vendor-fact catalog, refreshed by /orchestrator:update.
+# Format: the yaml-lite subset (scripts/lib/yaml-lite.mjs): space indentation, quoted strings when
+# they contain ":" or "#", no multi-line strings, no anchors. Validate after every edit:
+#   node <plugin>/scripts/registry.mjs validate
+# Values marked estimate: true are assumptions (vendors publish no multipliers). Override freely.
+
+meta:
+  schema_version: 2
+  verified_at: "2026-10-28"
+  stale_after_days: 30
+  effort_order: [none, minimal, low, medium, high, xhigh, max, ultra]
+  # Highest effort the router may pick on its own. Anything above needs escalation or approval.
+  auto_effort_ceiling: high
+  # Reachable only through escalation (one step at a time).
+  escalation_effort_ceiling: xhigh
+  # Never used without explicit user approval.
+  approval_efforts: [max, ultra]
+  effort_cost:
+    estimate: true
+    none: 0.5
+    minimal: 0.7
+    low: 1.0
+    medium: 1.6
+    high: 2.6
+    xhigh: 4.0
+    max: 6.0
+    ultra: 10.0
+  # usage units of one call = base_cost_weight x effort_cost x size_factor
+  # size_factor = clamp(total_tokens / reference_tokens, 0.25, 4), or 1 when tokens are unknown
+  reference_tokens: 40000
+  tier_order: [light, standard, heavy]
+  # Family of the main (orchestrating) session; the user's config.yaml overrides it.
+  main_family: claude
+  # Per-project overrides: <repo>/.claude/orchestrator.yaml is deep-merged over this file
+  # (objects merge, lists replace). A `config:` block there overrides the user config for that repo.
+  task_types: [implement, refactor, debug, test, review, plan, research, mechanical]
+  # Task sensitivity: none (public/low value), internal (private code, no secrets/PII), sensitive (secrets, PII,
+  # credentials, customer or regulated data). sensitive tasks only run on families whose data policy has sensitive_ok.
+  sensitivity_levels: [none, internal, sensitive]
+  # Files whose presence in a task (files list or brief text) makes the task sensitive. Extended by config/overlay.
+  sensitive_globs: ["**/.env*", "**/*.pem", "**/*.key", "**/*.p12", "**/*.pfx", "**/id_rsa*", "**/id_ed25519*", "**/.npmrc", "**/.netrc", "**/credentials*", "**/secrets/**", "**/*secret*", "**/*.kdbx", "**/service-account*.json"]
+  # Which plugin agent handles which task type for claude-agent models (lens security overrides review).
+  subagent_for_type:
+    implement: orch-implementer
+    refactor: orch-implementer
+    test: orch-implementer
+    debug: orch-debugger
+    mechanical: orch-mechanic
+    review: orch-reviewer
+    plan: orch-planner
+    research: orch-researcher
+  security_review_agent: orch-security-reviewer
+
+families:
+  claude:
+    label: Claude
+    role: primary
+    adapter: {id: claude-agent, script: null}
+    # Account detection: ~/.claude.json oauthAccount (organization type only, never tokens) matched by plans.*.account_match.
+    cli: {bin: claude, version_args: [--version], auth: account-file}
+    default_plan: claude_team
+    balance_weight: 1
+    note: "The main session also draws from the active plan."
+    # Applied to every plan of the family unless the plan overrides the key.
+    plan_defaults:
+      measurement: statusline
+      windows:
+        - {id: 5h, hours: 5, limit_units: null}
+        - {id: 7d, hours: 168, limit_units: null}
+      estimate_budget_units: {5h: 60, 7d: 500, estimate: true}
+      thresholds: {prefer_others: 60, low_effort_confirm: 85, cooldown: 100}
+      max_parallel: 2
+      cooldown_minutes_default: 60
+      verified_at: "2026-10-31"
+    data_policy_default: {training_on_data: unknown, sensitive_ok: false, source: "family default (unknown plan)", checked: "2026-10-31"}
+    plans:
+      claude_pro:
+        label: "Claude Pro (personal)"
+        tier: pro
+        account_match: {org_types: [claude_pro, pro]}
+        limits_note: "5-hour session plus weekly cap across models; Opus spends it fastest. Vendor publishes no fixed counts."
+        data_policy: {training_on_data: user_setting, sensitive_ok: false, source: "https://docs.claude.com/en/docs/claude-code/data-usage", checked: "2026-10-31", note: "Consumer plans: training is a user choice (since 2025-08-28), 5-year retention if allowed, 30 days if not. Set sensitive_ok true in config only if you opted out."}
+        sources: ["https://support.claude.com/en/articles/11145838-using-claude-code-with-your-pro-or-max-plan", "https://code.claude.com/docs/en/statusline"]
+      claude_max_5x:
+        label: "Claude Max 5x"
+        tier: max_5x
+        account_match: {org_types: [claude_max, max]}
+        estimate_budget_units: {5h: 300, 7d: 2500, estimate: true}
+        limits_note: "About 5x Pro usage per session (relative estimate, not a fixed count)."
+        data_policy: {training_on_data: user_setting, sensitive_ok: false, source: "https://docs.claude.com/en/docs/claude-code/data-usage", checked: "2026-10-31"}
+        sources: ["https://support.claude.com/en/articles/11145838-using-claude-code-with-your-pro-or-max-plan"]
+      claude_max_20x:
+        label: "Claude Max 20x"
+        tier: max_20x
+        estimate_budget_units: {5h: 1200, 7d: 10000, estimate: true}
+        limits_note: "About 20x Pro usage per session (relative estimate, not a fixed count)."
+        data_policy: {training_on_data: user_setting, sensitive_ok: false, source: "https://docs.claude.com/en/docs/claude-code/data-usage", checked: "2026-10-31"}
+        sources: ["https://support.claude.com/en/articles/11145838-using-claude-code-with-your-pro-or-max-plan"]
+      claude_team:
+        label: "Claude Team (Standard seat)"
+        tier: team_standard
+        account_match: {org_types: [team]}
+        estimate_budget_units: {5h: 75, 7d: 600, estimate: true}
+        limits_note: "About 1.25x Pro usage per 5h session plus a weekly cap, per seat (secondary sources; Anthropic publishes no fixed counts)."
+        data_policy: {training_on_data: false, sensitive_ok: true, source: "https://docs.claude.com/en/docs/claude-code/data-usage", checked: "2026-10-31", note: "Commercial terms: not trained on unless the org opts in; 30-day retention."}
+        sources: ["https://support.claude.com/en/articles/11845131-use-claude-code-with-your-team-or-enterprise-plan", "https://code.claude.com/docs/en/statusline"]
+      claude_team_premium:
+        label: "Claude Team (Premium seat)"
+        tier: team_premium
+        estimate_budget_units: {5h: 375, 7d: 3000, estimate: true}
+        limits_note: "Premium seats carry several times the Standard allowance (secondary sources disagree on the multiplier)."
+        data_policy: {training_on_data: false, sensitive_ok: true, source: "https://docs.claude.com/en/docs/claude-code/data-usage", checked: "2026-10-31"}
+        sources: ["https://support.claude.com/en/articles/11845131-use-claude-code-with-your-team-or-enterprise-plan"]
+      claude_enterprise:
+        label: "Claude Enterprise"
+        tier: enterprise
+        account_match: {org_types: [enterprise]}
+        estimate_budget_units: {5h: 75, 7d: 600, estimate: true}
+        limits_note: "Per-seat usage limits set by the contract."
+        data_policy: {training_on_data: false, sensitive_ok: true, source: "https://docs.claude.com/en/docs/claude-code/data-usage", checked: "2026-10-31"}
+        sources: ["https://support.claude.com/en/articles/11845131-use-claude-code-with-your-team-or-enterprise-plan"]
+  gpt:
+    label: GPT (Codex)
+    role: primary
+    adapter: {id: codex, script: run-codex.mjs}
+    cli: {bin: codex, version_args: [--version], auth_args: [login, status], auth_ok: "logged in"}
+    default_plan: chatgpt_business
+    balance_weight: 1
+    plan_defaults:
+      # Exact 5h/weekly usage via `codex app-server` account/rateLimits/read (zero model tokens, experimental): falls back to the estimate.
+      measurement: app-server
+      windows:
+        - {id: 5h, hours: 5, limit_units: null}
+        - {id: 7d, hours: 168, limit_units: null}
+      estimate_budget_units: {5h: 80, 7d: 600, estimate: true}
+      thresholds: {prefer_others: 60, low_effort_confirm: 85, cooldown: 100}
+      max_parallel: 2
+      cooldown_minutes_default: 60
+      usage_dashboard: "https://chatgpt.com/codex/settings/usage"
+      verified_at: "2026-10-31"
+    data_policy_default: {training_on_data: unknown, sensitive_ok: false, source: "family default (unknown plan)", checked: "2026-10-31"}
+    plans:
+      chatgpt_plus:
+        label: "ChatGPT Plus"
+        tier: plus
+        account_match: {codex_plan_types: [plus]}
+        limits_note: "Codex 5h ranges per model (e.g. 6.1 Sol 15-160 local messages, Astra 5-45) plus weekly cap."
+        data_policy: {training_on_data: user_setting, sensitive_ok: false, source: "https://help.openai.com/en/articles/8983130", checked: "2026-10-31", note: "Training on by default, opt-out 'Improve the model for everyone'. Set sensitive_ok true in config only if you opted out."}
+        sources: ["https://learn.chatgpt.com/docs/pricing"]
+      chatgpt_pro:
+        label: "ChatGPT Pro"
+        tier: pro
+        account_match: {codex_plan_types: [pro, prolite]}
+        windows:
+          - {id: 7d, hours: 168, limit_units: null}
+        estimate_budget_units: {7d: 3000, estimate: true}
+        limits_note: "No 5h limit on Pro; much higher weekly allowance."
+        data_policy: {training_on_data: user_setting, sensitive_ok: false, source: "https://help.openai.com/en/articles/8983130", checked: "2026-10-31"}
+        sources: ["https://learn.chatgpt.com/docs/pricing"]
+      chatgpt_business:
+        label: "ChatGPT Business"
+        tier: business
+        account_match: {codex_plan_types: [team, business]}
+        limits_note: "Same 5h ranges as Plus (Standard seat), billed per seat."
+        data_policy: {training_on_data: false, sensitive_ok: true, source: "https://help.openai.com/en/articles/8983130", checked: "2026-10-31", note: "Business/Enterprise are not trained on by default, including Codex."}
+        sources: ["https://learn.chatgpt.com/docs/pricing"]
+      chatgpt_enterprise:
+        label: "ChatGPT Enterprise"
+        tier: enterprise
+        account_match: {codex_plan_types: [enterprise, edu]}
+        limits_note: "Limits set by the contract."
+        data_policy: {training_on_data: false, sensitive_ok: true, source: "https://help.openai.com/en/articles/8983130", checked: "2026-10-31"}
+        sources: ["https://learn.chatgpt.com/docs/pricing"]
+  grok:
+    label: Grok
+    role: secondary
+    adapter: {id: grok, script: run-grok.mjs}
+    cli: {bin: grok, version_args: [--version], auth_args: [models], auth_fail: "not authenticated|not logged in|please log in"}
+    default_plan: grok_supergrok
+    uses: [coding_fallback, extra_review, simple_tasks]
+    note: "Behind the top Claude/GPT models on benchmarks. Use as a fallback, an extra review round or for light-tier tasks."
+    plan_defaults:
+      # grok has no non-interactive account-limit readout (/usage is interactive only): manual readings + estimate.
+      measurement: manual
+      windows:
+        - {id: 7d, hours: 168, limit_units: null}
+      estimate_budget_units: {7d: 300, estimate: true}
+      thresholds: {prefer_others: 60, low_effort_confirm: 85, cooldown: 100}
+      max_parallel: 2
+      cooldown_minutes_default: 120
+      usage_dashboard: "https://grok.com (Settings > Usage)"
+      verified_at: "2026-10-31"
+    data_policy_default: {training_on_data: unknown, sensitive_ok: false, source: "family default (unknown plan)", checked: "2026-10-31"}
+    plans:
+      grok_supergrok:
+        label: "SuperGrok"
+        tier: supergrok
+        limits_note: "Legacy (pre-2026-10-12) SuperGrok allowance shared with Grok Chat/Imagine/Voice/Build; no published counts."
+        data_policy: {training_on_data: user_setting, sensitive_ok: false, source: "https://help.x.com/en/using-x/about-grok", checked: "2026-10-31", note: "Training on by default, opt-out 'Improve the Model' (not retroactive; feedback may still be used). xAI's own policy page was not retrievable; confidence low."}
+        sources: ["https://x.ai/pricing", "https://docs.x.ai/docs/models"]
+      grok_supergrok_heavy:
+        label: "SuperGrok Heavy"
+        tier: supergrok_heavy
+        estimate_budget_units: {7d: 1500, estimate: true}
+        limits_note: "Higher allowance tier; no published counts."
+        data_policy: {training_on_data: user_setting, sensitive_ok: false, source: "https://help.x.com/en/using-x/about-grok", checked: "2026-10-31"}
+        sources: ["https://x.ai/pricing"]
+  gemini:
+    label: Gemini (Antigravity CLI)
+    role: secondary
+    adapter: {id: gemini, script: run-gemini.mjs}
+    # `agy` is the consumer successor of Gemini CLI (since 2026-06-18). ORCH_AGY_BIN overrides the binary (tests).
+    cli: {bin: agy, bin_env: ORCH_AGY_BIN, version_args: [--version], auth_args: [models], auth_fail: "authentication required|not logged in|sign in|log in"}
+    default_plan: gemini_ai_pro
+    uses: [extra_review, research, simple_tasks]
+    note: "Consumer plans: training on by default with an unclear opt-out, and wrapping agy in other tools may be unsupported (ToS unresolved). Never receives sensitive data unless the user overrides."
+    plan_defaults:
+      # No documented non-interactive quota readout: per-call usage from the JSON envelope + manual readings.
+      measurement: manual
+      windows:
+        - {id: 5h, hours: 5, limit_units: null}
+      estimate_budget_units: {5h: 60, estimate: true}
+      thresholds: {prefer_others: 60, low_effort_confirm: 85, cooldown: 100}
+      max_parallel: 1
+      cooldown_minutes_default: 60
+      verified_at: "2026-10-31"
+    data_policy_default: {training_on_data: unknown, sensitive_ok: false, source: "family default (unknown plan)", checked: "2026-10-31"}
+    plans:
+      gemini_free:
+        label: "Gemini free (Antigravity)"
+        tier: free
+        estimate_budget_units: {5h: 20, estimate: true}
+        limits_note: "Small rolling allowance refreshed about every 5 hours."
+        data_policy: {training_on_data: true, sensitive_ok: false, source: "https://discuss.ai.google.dev/t/antigravity-data-training-opt-out/125236", checked: "2026-10-31", note: "Forum reports only (low confidence): training on by default, opt-out unclear."}
+        sources: ["https://antigravity.google/docs/cli/headless"]
+      gemini_ai_pro:
+        label: "Google AI Pro"
+        tier: ai_pro
+        limits_note: "Quota refreshes about every 5 hours; AI credits can be bought for more."
+        data_policy: {training_on_data: unknown, sensitive_ok: false, source: "https://discuss.ai.google.dev/t/what-all-data-is-being-used-for-training-for-a-personal-google-ai-pro-membersip/144648", checked: "2026-10-31", note: "Consumer account: training on by default per forums, only a telemetry toggle is visible (low confidence)."}
+        sources: ["https://support.google.com/googleone/answer/16286513", "https://antigravity.google/docs/cli/headless"]
+      gemini_ai_ultra:
+        label: "Google AI Ultra"
+        tier: ai_ultra
+        estimate_budget_units: {5h: 300, estimate: true}
+        limits_note: "Higher allowance (5x/20x tiers); quota refreshes about every 5 hours."
+        data_policy: {training_on_data: unknown, sensitive_ok: false, source: "https://discuss.ai.google.dev/t/antigravity-data-training-opt-out/125236", checked: "2026-10-31", note: "Same consumer terms as AI Pro (low confidence)."}
+        sources: ["https://support.google.com/googleone/answer/16286513"]
+      gemini_workspace:
+        label: "Gemini via Google Workspace / Cloud"
+        tier: workspace
+        limits_note: "Admin-managed quota."
+        data_policy: {training_on_data: false, sensitive_ok: false, source: "unverified: Workspace/Cloud terms are said to exclude training, but agy support for these accounts was not confirmed", checked: "2026-10-31", note: "Read your contract, then set sensitive_ok true in config if appropriate."}
+        sources: ["https://github.com/google-gemini/gemini-cli"]
+
+excluded_models:
+  - id: claude-fable
+    family: claude
+    reason: "Not available on the user's Claude subscriptions (Team, Pro) (user statement 2026-10-27)."
+    since: "2026-10-27"
+    match: [fable, claude-fable-5-1, claude-fable-5]
+  - id: gpt-daybreak
+    family: gpt
+    reason: "Hidden cyber-security variants, not for general routing."
+    since: "2026-10-27"
+    match: [gpt-daybreak-blue-latest, gpt-daybreak-red-latest, codex-auto-review]
+  - id: gpt-legacy
+    family: gpt
+    reason: "Older generations superseded by gpt-6.1-* / gpt-6-luna. Remove from this list to route to them."
+    since: "2026-10-27"
+    match: [gpt-6-sol, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5]
+  - id: grok-non-4.7
+    family: grok
+    reason: "Removed by the user (2026-10-27): only grok-4.7 is used in the Grok family."
+    since: "2026-10-27"
+    match: [grok-4.7-build-fast, grok-4.6, grok-4.5]
+  - id: agy-third-party
+    family: gemini
+    reason: "Third-party models served through agy (Claude, GPT-OSS): the Claude and GPT families have their own adapters and pools."
+    since: "2026-10-31"
+    match: [claude-sonnet-4-6, claude-opus-4-6-thinking, gpt-oss-120b-medium]
+
+models:
+  # ---------------------------------------------------------------- Claude (native subagents)
+  claude-haiku:
+    family: claude
+    tier: light
+    status: active
+    invoke: claude-agent
+    agent_model: haiku
+    resolves_to: claude-haiku-5-5
+    context_tokens: 1000000
+    speed: fastest
+    effort:
+      levels: [low, medium, high, xhigh, max]
+      default: medium
+      set_via: "Agent tool parameter effort (CC >= 2.1.292); frontmatter effort as default"
+    base_cost_weight: 0.25
+    tools: {edit: true, shell: true, web: true}
+    strengths: "Very fast and cheap. Mechanical edits, simple tests, lookups, summarizing."
+    weaknesses: "Weak at multi-file reasoning and hard debugging."
+    suitability: {implement: 2, refactor: 2, debug: 2, test: 3, review: 2, plan: 2, research: 3, mechanical: 4}
+    verified_at: "2026-10-28"
+    sources:
+      - "https://platform.claude.com/docs/en/about-claude/models/overview"
+      - "https://code.claude.com/docs/en/model-config"
+  claude-sonnet:
+    family: claude
+    tier: standard
+    status: active
+    invoke: claude-agent
+    agent_model: sonnet
+    resolves_to: claude-sonnet-5-5
+    context_tokens: 1000000
+    speed: fast
+    effort:
+      levels: [low, medium, high, xhigh, max]
+      default: medium
+      set_via: "Agent tool parameter effort; frontmatter effort as default"
+    base_cost_weight: 1.0
+    tools: {edit: true, shell: true, web: true}
+    strengths: "Best speed/intelligence balance. Strong everyday coding, review and planning."
+    weaknesses: "Below Opus on long-horizon architecture and the hardest bugs."
+    suitability: {implement: 4, refactor: 4, debug: 4, test: 4, review: 4, plan: 4, research: 4, mechanical: 4}
+    verified_at: "2026-10-28"
+    sources:
+      - "https://platform.claude.com/docs/en/about-claude/models/overview"
+  claude-opus:
+    family: claude
+    tier: heavy
+    status: active
+    invoke: claude-agent
+    agent_model: opus
+    resolves_to: claude-opus-5-5
+    context_tokens: 1000000
+    speed: moderate
+    effort:
+      levels: [low, medium, high, xhigh, max]
+      default: medium
+      set_via: "Agent tool parameter effort; frontmatter effort as default"
+    base_cost_weight: 2.0
+    tools: {edit: true, shell: true, web: true}
+    strengths: "Long-running agentic coding, architecture, hard debugging, critical review."
+    weaknesses: "About 2x Sonnet usage. Separate Opus limit messages exist on subscriptions."
+    suitability: {implement: 5, refactor: 5, debug: 5, test: 4, review: 5, plan: 5, research: 4, mechanical: 3}
+    note: "Available on Pro in Claude Code (default model since CC v2.1.280)."
+    verified_at: "2026-10-28"
+    sources:
+      - "https://platform.claude.com/docs/en/about-claude/models/overview"
+      - "https://code.claude.com/docs/en/model-config"
+
+  # ---------------------------------------------------------------- GPT (Codex CLI via codex plugin runtime)
+  gpt-6-luna:
+    family: gpt
+    tier: light
+    status: active
+    invoke: codex
+    cli_model: gpt-6-luna
+    context_tokens: 272000
+    speed: fast
+    effort:
+      levels: [low, medium, high, xhigh, max]
+      default: medium
+      set_via: "codex-companion --effort <lvl> (<= xhigh) | codex exec -c model_reasoning_effort=<lvl>"
+    base_cost_weight: 0.05
+    tools: {edit: true, shell: true, web: true}
+    strengths: "Fast and very cheap (350-3000 msgs/5h on Plus). Mechanical edits, simple tests, quick lookups."
+    weaknesses: "Shallow reasoning. Not for design or risky changes."
+    suitability: {implement: 2, refactor: 3, debug: 2, test: 3, review: 2, plan: 2, research: 3, mechanical: 4}
+    verified_at: "2026-10-28"
+    sources:
+      - "codex debug models --bundled (codex-cli 0.164.0)"
+      - "https://learn.chatgpt.com/docs/pricing"
+  gpt-6.1-terra:
+    family: gpt
+    tier: standard
+    status: active
+    invoke: codex
+    cli_model: gpt-6.1-terra
+    context_tokens: 500000
+    speed: fast
+    effort:
+      levels: [low, medium, high, xhigh, max, ultra]
+      default: low
+      set_via: "codex-companion --effort (<= xhigh) | codex exec -c model_reasoning_effort"
+    base_cost_weight: 0.5
+    tools: {edit: true, shell: true, web: true}
+    strengths: "Balanced and cheaper than Sol (35-285 msgs/5h on Plus). Straightforward implementation and tests."
+    weaknesses: "Below Sol on hard problems."
+    suitability: {implement: 3, refactor: 3, debug: 3, test: 4, review: 3, plan: 3, research: 3, mechanical: 4}
+    verified_at: "2026-10-28"
+    sources:
+      - "https://learn.chatgpt.com/docs/pricing"
+  gpt-6.1-sol:
+    family: gpt
+    tier: standard
+    status: active
+    invoke: codex
+    cli_model: gpt-6.1-sol
+    context_tokens: 500000
+    speed: moderate
+    effort:
+      levels: [low, medium, high, xhigh, max, ultra]
+      default: medium
+      set_via: "codex-companion --effort (<= xhigh) | codex exec -c model_reasoning_effort"
+    base_cost_weight: 1.0
+    tools: {edit: true, shell: true, web: true}
+    strengths: "Latest workhorse coding model. DeepSWE 1.1 at 75.0% (vendor), close to Astra at about 1/5 the price."
+    weaknesses: "ultra effort self-delegates (never auto)."
+    suitability: {implement: 5, refactor: 4, debug: 4, test: 4, review: 4, plan: 4, research: 4, mechanical: 4}
+    verified_at: "2026-10-28"
+    sources:
+      - "codex debug models --bundled (codex-cli 0.164.0)"
+      - "https://openai.com/index/introducing-gpt-6-1-sol/"
+      - "https://learn.chatgpt.com/docs/pricing"
+  gpt-6-astra:
+    family: gpt
+    tier: heavy
+    status: active
+    invoke: codex
+    cli_model: gpt-6-astra
+    context_tokens: 272000
+    speed: slow
+    effort:
+      levels: [low, medium, high, xhigh, max, ultra]
+      default: low
+      set_via: "codex-companion --effort (<= xhigh) | codex exec -c model_reasoning_effort"
+    base_cost_weight: 3.5
+    tools: {edit: true, shell: true, web: true}
+    strengths: "Frontier intelligence: hardest design, debugging and critical review."
+    weaknesses: "Only 5-45 msgs/5h on Plus. Use for heavy-tier work with a justification."
+    suitability: {implement: 5, refactor: 5, debug: 5, test: 4, review: 5, plan: 5, research: 4, mechanical: 3}
+    verified_at: "2026-10-28"
+    sources:
+      - "codex debug models --bundled (codex-cli 0.164.0)"
+      - "https://learn.chatgpt.com/docs/pricing"
+
+  # ---------------------------------------------------------------- Grok (Grok Build CLI, own wrapper)
+  grok-4.7:
+    family: grok
+    tier: standard
+    status: active
+    invoke: grok
+    cli_model: grok-4.7
+    context_tokens: 500000
+    speed: moderate
+    modalities: "text, image -> text"
+    effort:
+      levels: [low, medium, high, xhigh]
+      default: high
+      set_via: "grok --reasoning-effort <lvl>"
+    base_cost_weight: 1.0
+    tools: {edit: true, shell: true, web: true}
+    strengths: "xAI frontier coding model. Function calling, structured outputs. DeepSWE 71.0% (vendor)."
+    weaknesses: "Behind the top Claude/GPT models. Uses about 2x the tokens of 4.6."
+    note: "Default model in grok CLI 1.0.70 after login (legacy SuperGrok). Smoke test OK 2026-10-27 (effort low)."
+    suitability: {implement: 3, refactor: 3, debug: 3, test: 3, review: 3, plan: 3, research: 4, mechanical: 3}
+    api_rate_limits: "150 rps, 50M TPM (API only, not the subscription pool)"
+    verified_at: "2026-10-28"
+    sources:
+      - "https://docs.x.ai/docs/models"
+      - "https://x.ai/build"
+      - "Grok 4.7 model card pasted by the user (2026-10-27)"
+
+  # ---------------------------------------------------------------- Gemini (Antigravity CLI `agy`, own wrapper)
+  gemini-3.8-flash:
+    family: gemini
+    tier: standard
+    status: unverified
+    invoke: gemini
+    cli_model: gemini-3.8-flash
+    speed: fast
+    effort:
+      levels: [low, medium, high]
+      default: medium
+      set_via: "model suffix: agy -m gemini-3.8-flash-<effort> (agy models lists -high|-medium|-low); agy also has --effort"
+      model_suffix: true
+    base_cost_weight: 0.5
+    tools: {edit: true, shell: false, web: true}
+    strengths: "Fast, cheap, large-context Flash model. Research, extra review rounds, simple tasks."
+    weaknesses: "Not verified for hard debugging. Consumer plans: no sensitive data. Shell commands are denied unless allowed in agy settings."
+    note: "Status stays unverified until `doctor --live` succeeds once (agy 1.4.12 installed and logged in on the dev machine, 2026-10-31)."
+    suitability: {implement: 3, refactor: 3, debug: 3, test: 3, review: 3, plan: 3, research: 4, mechanical: 3}
+    verified_at: "2026-10-31"
+    sources:
+      - "agy models (agy 1.4.12, 2026-10-31)"
+      - "https://antigravity.google/docs/cli/headless"
