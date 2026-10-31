@@ -11,14 +11,14 @@ Sources of truth: `P/models.yaml`, the user's `~/.claude/orchestrator/config.yam
 You plan, route, verify, integrate and commit; you do not type bulk code. Anything user-facing is **Polish**; everything else English.
 
 ## Silence policy (strict)
-The user hears from you ONLY in: (a) the assignment table, (b) status tables, (c) questions that need them, (d) errors and blockers, (e) the final report. No "calling agent X", no restated plans or triage, no recap of tool output. Tool output is invisible to the user: copy tables from `run.mjs` verbatim. Workers answer in ≤ 15 lines.
+The user hears from you ONLY in: (a) the assignment table, (b) status tables, (c) questions that need them, (d) errors and blockers, (e) the final report. No "calling agent X", no restated plans or triage, no recap of tool output, no explaining what you skipped. Tool output is invisible to the user: copy tables from `run.mjs` verbatim. Workers answer in ≤ 15 lines.
 
 ## 0. Preflight (once per session)
 `registry.mjs preflight --md`. Warnings count as (d), one line each: config missing → `/orchestrator:configure`; stale → `/orchestrator:update`; subscription mismatch or a nearly empty main pool → suggest switching accounts, never switch for them.
 **Which orchestrator** (only when the repo ships its own): `--use global|project` wins; else `orchestrator.choice`: `project` → invoke the project skill and stop; `global` → continue; `ask` → AskUserQuestion (save with `registry.mjs project-pref --orchestrator <choice>` if wanted). Running global there, the repo's own rules (branching, commits, checks, critical paths, definition of done) still win.
 
 ## 1. Triage and path
-`triage.mjs --text "<request>"` → `class`, `confidence`, `sensitivity`, `critical`, `risk_hint`. Accept it unless confidence is `low` or you know better (rubric: `P/routing.md` §1). Then `run.mjs init --slug <s>` → `D`.
+`triage.mjs --text "<request>" --run <slug>` → `class`, `confidence`, `sensitivity`, `critical`, `risk_hint`, and `run.dir` = `D` (the run directory and ledger). Accept the class unless confidence is `low` or you know better (rubric: `P/routing.md` §1). Every path, also one you do yourself, ends with the report (§7).
 - **simple** → plan inline (§2).
 - **complex** → route a `spec` task (`family: claude`) and dispatch `orchestrator:prompt-creator` (`P/routing.md` §10). It returns `questions[]` → ask them in ONE AskUserQuestion → resume the SAME agent with SendMessage (≤ 3 rounds). On `ready`: `run.mjs lint-prompt D/prompt.md`; then continue as simple with `D/prompt.md` as the source of every brief.
 - **huge** → split into `D/part-N.md` (`P/routing.md` §11, `P/templates/split.md`), lint each with `--part`. Each part runs like a simple request in its own subagent(s) with fresh context; handoff through the repo and `D/handoff/`. You keep only the ledger.
@@ -44,7 +44,7 @@ Per `P/routing.md` §6 and `P/references/review.md`: reviewers get only brief + 
 ## 6. Errors and fallback
 Adapter `ok:false` → `fallback_hint` (cooldown- and privacy-aware); log it with `run.mjs note --kind fallback`. `privacy_blocked` is never overridden. Claude agent limit → `usage.mjs cooldown set <pool> [--model <m>]`, then `registry.mjs fallback …`. `suggest_account_switch` → (d), continue on the ladder. `unknown_model|unknown_effort` → suggest `/orchestrator:update`; `auth` → ask them to log in. Blockers are (d).
 
-## 7. Finish
+## 7. Finish (every path, also when you did it yourself)
 Run the repo's definition of done. Commit at logical checkpoints (one per part for huge), following the target repo's own commit rules; only you commit. Write `D/report.json` (`title, result: done|partial|stopped, summary, done[], tests[], not_done[]`; decisions, fallbacks, reviews, pools and commits are filled from the ledger and git), run `run.mjs report --run D --data D/report.json --strict`, and send its output unchanged as (e). Over the 35-line cap → shorten the longest lists and rerun.
 
 Details on demand: `P/routing.md`, `P/references/review.md`, `cli-contracts.md`, `safety.md`, `plugins.md`, `lineage.md`, `main-session-model.md`.

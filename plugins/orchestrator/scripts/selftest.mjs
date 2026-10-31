@@ -524,6 +524,8 @@ function triageScenario() {
   check('triage', 'docs-only change is sensitivity none', triageLib.triage('Fix the typo in README.md', reg).sensitivity === 'none');
   const cli = spawnSync(process.execPath, [path.join(HERE, 'triage.mjs'), '--text', 'Fix the typo in README.md'], { encoding: 'utf8', env: process.env });
   check('triage', 'CLI prints one JSON line', cli.status === 0 && JSON.parse(cli.stdout).class === 'simple');
+  const withRun = JSON.parse(spawnSync(process.execPath, [path.join(HERE, 'triage.mjs'), '--text', 'Fix the typo in README.md', '--run', 'st'], { encoding: 'utf8', env: process.env }).stdout);
+  check('triage', '--run creates the run directory and ledger in the same call', withRun.run?.dir && fs.existsSync(path.join(withRun.run.dir, 'ledger.json')) && withRun.run.dir.startsWith(TMP));
   const g = gateLib.egmGate({ critical: true });
   check('triage', 'egm_gate placeholder returns not-critical and continue (critical flag kept as candidate)', g.gate === 'egm_gate' && g.critical === false && g.action === 'continue' && g.candidate === true);
 }

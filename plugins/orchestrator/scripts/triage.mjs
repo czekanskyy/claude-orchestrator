@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Deterministic triage PROPOSAL: class simple|complex|huge, sensitivity, critical. Zero model tokens.
 // Judgment stays with the orchestrator: on confidence "low" (mixed signals) it decides, and it may override anything.
-// Usage: node triage.mjs (--text "..." | --file prompt.txt) [--json]
+// Usage: node triage.mjs (--text "..." | --file prompt.txt) [--run <slug>]   (--run also creates the run directory)
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { loadRegistry, parseArgs, out, fail } from './lib/common.mjs';
+import { loadRegistry, parseArgs, fail } from './lib/common.mjs';
 import { scanTextForSensitivePaths } from './lib/privacy.mjs';
+import { initRun } from './run.mjs';
 
 // Stems are matched as word prefixes so Polish inflections count (kolor, koloru, kolorze).
 const SIMPLE = ['typo', 'literówk', 'kolor', 'color', 'colour', 'padding', 'margin', 'margines', 'odstęp', 'spacing', 'font', 'czcionk', 'label', 'etykiet', 'tooltip', 'placeholder', 'rename', 'zmień nazw', 'zmien nazw', 'ikon', 'icon', 'wyrównaj', 'align', 'border', 'ramk', 'shadow', 'cień', 'radius', 'zaokrągl', 'wording', 'napis', 'treść komunikat', 'button text', 'tekst przycisk'];
@@ -71,11 +72,11 @@ export function triage(text, reg = loadRegistry()) {
 }
 
 async function main(argv) {
-  const a = parseArgs(argv, { flags: ['json'] });
+  const a = parseArgs(argv);
   const text = a.file ? fs.readFileSync(a.file, 'utf8') : a.text;
   if (!text) return fail('usage: triage.mjs (--text "..." | --file prompt.txt)');
   const r = triage(text);
-  if (a.json) return out(r);
+  if (a.run) r.run = initRun(loadRegistry(), { slug: a.run });
   process.stdout.write(`${JSON.stringify(r)}\n`);
 }
 
