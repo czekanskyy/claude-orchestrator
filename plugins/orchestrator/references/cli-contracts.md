@@ -65,3 +65,8 @@ Env: `ORCH_HOME` also relocates `repos/`; `ORCH_NO_OVERLAY=1` also ignores the s
 
 ## statusline.mjs
 Wired into `~/.claude/settings.json` → `statusLine`. Saves `rate_limits` to `pools/<active claude pool>.snapshot.json` (Team or personal Pro, per the detected login) and shows `model · ctx · 5h · 7d · GPT~ · Grok~`.
+
+## auto.mjs / auto-supervisor.mjs (`/orchestrator:auto`, details: `autonomous.md`)
+All commands print one JSON object (`ok`, …) except `status` / `report` (Polish text). Run state: `~/.claude/orchestrator/auto/<run-id>/`.
+`auto.mjs prepare [--repo DIR]` (repo state, profile defaults, privacy, keep-awake) · `draft --answers F [--prompt-file P]` (contract.yaml + permissions.json + feasibility; refused while another run owns the repo) · `preflight --run ID [--skip-doctor]` (clean tree, worktree, one live headless probe, `doctor --live`) · `start --run ID --go --hash H` (worktree + branch `auto/<id>`, detached supervisor; nothing starts without `--go`) · `status | report [--run ID]` · `pause | continue | stop | abort | takeover [--run ID]` (control files; work offline when the supervisor is dead) · `review list | revert --id <task|decision> | done` · `merge --run ID --into BRANCH --yes` · `cleanup --run ID --yes` · `list`.
+`auto-supervisor.mjs --run DIR` is the detached guardian (restarts `--engine` children, watchdog, keep-awake); never started by hand. `auto-smoke.mjs [--keep] [--timeout-min N]` = real end-to-end smoke in a throwaway repo (spends a few headless Claude calls). Env: `ORCH_AUTO_WAIT_SCALE`, `ORCH_AUTO_INJECT` (tests only), `ORCH_CLAUDE_BIN`.
