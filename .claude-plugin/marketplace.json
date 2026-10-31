@@ -1,12 +1,12 @@
 {
   "name": "czekanskyy-tools",
   "owner": { "name": "Dominik Czekański" },
-  "metadata": { "description": "Private Claude Code plugins.", "version": "1.0.0" },
+  "metadata": { "description": "Private Claude Code plugins.", "version": "3.0.0" },
   "plugins": [
     {
       "name": "orchestrator",
-      "description": "Orchestrator workflow: Claude subagents and Codex workers with cross-family review.",
-      "version": "1.0.0",
+      "description": "Multi-model orchestrator: Claude subagents plus GPT (Codex), Grok and Gemini workers with a privacy model, cross-family review and pool tracking.",
+      "version": "3.0.0",
       "author": { "name": "Dominik Czekański" },
       "source": "./plugins/orchestrator"
     }
