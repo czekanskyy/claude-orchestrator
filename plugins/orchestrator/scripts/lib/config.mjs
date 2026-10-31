@@ -14,8 +14,8 @@ const POLICY_KEYS = ['training_on_data', 'sensitive_ok'];
 const TRAINING_VALUES = [true, false, 'unknown', 'user_setting'];
 const ORCHESTRATORS = ['global', 'project', 'ask'];
 const SENSITIVITIES = ['none', 'internal', 'sensitive'];
-const SECRET_KEY = /secret|token|passw|api_?key|credential|auth/i;
-const SECRET_VALUE = /sk-[A-Za-z0-9_-]{16,}|-----BEGIN|xox[abprs]-|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,}|xai-[A-Za-z0-9]{16,}/;
+export const SECRET_KEY = /secret|token|passw|api_?key|credential|auth/i;
+export const SECRET_VALUE = /sk-[A-Za-z0-9_-]{16,}|-----BEGIN|xox[abprs]-|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,}|xai-[A-Za-z0-9]{16,}/;
 
 export function readConfig(file = CONFIG_FILE) {
   if (!fs.existsSync(file)) return { config: null, error: null, file };
