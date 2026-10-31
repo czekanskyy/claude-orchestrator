@@ -621,12 +621,12 @@ function renderScenario() {
   const plan = JSON.parse(run('plan', '--run', init.dir, '--route', routeFile).stdout);
   check('render', 'run.mjs plan builds waves into the ledger', plan.added >= 3 && plan.waves >= 2, JSON.stringify(plan));
   const w1 = JSON.parse(run('assign', '--run', init.dir, '--json').stdout);
-  check('render', 'assign shows the first wave, marks it in progress, gives persona descriptions', w1.wave === 1 && /^\S+ \S+: T1/.test(w1.dispatch[0].description) && w1.dispatch[0].via && w1.table.includes('| Agent |'), JSON.stringify(w1.dispatch[0]));
+  check('render', 'assign shows the first wave, marks it in progress, gives persona descriptions', w1.wave === 1 && /^\S+ \S+: T1/.test(w1.dispatch[0].description) && w1.dispatch[0].via && w1.show.includes('| Agent |'), JSON.stringify(w1.dispatch[0]));
   check('render', 'assign does not hand out the same rows twice', run('assign', '--run', init.dir, '--wave', '1').status !== 0);
   run('set', '--run', init.dir, 'T1', '--status', 'done', '--note', 'ok');
   const w2 = JSON.parse(run('assign', '--run', init.dir, '--json').stdout);
-  check('render', 'the next assign carries the status table so far (✅ for T1) before its own table', w2.wave === 2 && w2.status?.includes('✅') && w2.status.includes('| Stage |') && w2.table.includes('| Agent |'), JSON.stringify(w2.status));
-  check('render', 'the first assign has no status (nothing happened yet)', w1.status === null);
+  check('render', 'the next assign carries the status table so far (✅ for T1) before its own table', w2.wave === 2 && w2.show.includes('✅') && w2.show.indexOf('| Stage |') < w2.show.indexOf('| Agent |'), w2.show);
+  check('render', 'the first assign has no status (nothing happened yet)', !w1.show.includes('| Stage |'));
   const status = run('status', '--run', init.dir, '--summary', 'Fala 1 gotowa').stdout;
   check('render', 'status table reflects set + summary', status.includes('✅') && status.includes('Fala 1 gotowa'));
   run('note', '--run', init.dir, '--kind', 'decision', 'Wybrano', 'JWT'); run('note', '--run', init.dir, '--kind', 'fallback', 'GPT → Claude (limit)');

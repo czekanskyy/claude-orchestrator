@@ -83,8 +83,9 @@ async function main(argv) {
       for (const r of rows) r.status = 'progress';
       save(a.run, l);
       const table = assignmentTable(rows);
-      if (!a.json) { process.stdout.write(`${status ? `${status}\n\n` : ''}${table}\n`); return; }
-      return out({ wave, status, table, dispatch: rows.map((r) => ({ id: r.id, description: `${r.agent}: ${r.id}`, ...r.dispatch })) });
+      const show = `${status ? `${status}\n\n` : ''}${table}`;
+      if (!a.json) { process.stdout.write(`${show}\n`); return; }
+      return out({ wave, show, dispatch: rows.map((r) => ({ id: r.id, description: `${r.agent}: ${r.id}`, ...r.dispatch })) });
     }
     case 'set': {
       const l = need();
