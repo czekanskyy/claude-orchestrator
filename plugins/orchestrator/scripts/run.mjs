@@ -12,12 +12,12 @@ const USAGE = `run.mjs <command>
   init [--slug S] [--repo DIR]                       create runs/<ts>-run-<slug>/ with ledger.json (pool + git baseline)
   plan --run DIR --route route.json                  add routed assignments to the ledger (waves, personas)
   add --run DIR --id I --stage S --role R --model M --effort E --title T [--wave N]   a row not produced by the router
-  assign --run DIR [--wave N] [--json]               assignment table of the next pending wave; marks it 🔄
+  assign --run DIR [--wave N] [--json]               status table so far (if any) + assignment table of the next pending wave; marks it 🔄
   set --run DIR <id> --status done|progress|pending|attention|failed [--note TEXT]
   status --run DIR [--summary TEXT]...               status table (+ at most 3 summary lines)
   report --run DIR --data report.json [--strict]     final report (Polish, ≤ 35 lines); pools and commits auto-filled
   note --run DIR --kind decision|fallback TEXT         record a decision made on the user's behalf / a fallback (feeds the report)
-  review --run DIR --by X --of Y [--high N --med N --low N --fixed N --rejected N --note T]   record one cross-review (feeds the report)
+  review --run DIR --by X --of Y [--id T1 --high N --med N --low N --fixed N --rejected N --note T]   record one cross-review (feeds the report)
   save-prompt --run DIR [--part N]                   read the prompt from stdin, write prompt.md (or part-N.md), lint it, print the verdict
   lint-prompt FILE [--part]                          prompt.md / split part: sections present and self-contained`;
 
@@ -79,11 +79,12 @@ async function main(argv) {
       const wave = a.wave ? Number(a.wave) : Math.min(...l.rows.filter((r) => r.status === 'pending').map((r) => r.wave));
       const rows = l.rows.filter((r) => r.wave === wave && r.status === 'pending');
       if (!rows.length) return fail('no pending rows in that wave');
+      const status = l.rows.some((r) => r.status !== 'pending') ? statusTable(l.rows) : null; // progress so far, shown before the next wave
       for (const r of rows) r.status = 'progress';
       save(a.run, l);
       const table = assignmentTable(rows);
-      if (!a.json) { process.stdout.write(`${table}\n`); return; }
-      return out({ wave, table, dispatch: rows.map((r) => ({ id: r.id, description: `${r.agent}: ${r.id}`, ...r.dispatch })) });
+      if (!a.json) { process.stdout.write(`${status ? `${status}\n\n` : ''}${table}\n`); return; }
+      return out({ wave, status, table, dispatch: rows.map((r) => ({ id: r.id, description: `${r.agent}: ${r.id}`, ...r.dispatch })) });
     }
     case 'set': {
       const l = need();
@@ -106,7 +107,7 @@ async function main(argv) {
     case 'review': {
       const l = need();
       const n = (k) => Number(a[k] || 0);
-      (l.reviews ||= []).push({ by: a.by, of: a.of, high: n('high'), med: n('med'), low: n('low'), fixed: n('fixed'), rejected: n('rejected'), note: a.note || '' });
+      (l.reviews ||= []).push({ id: a.id || '', by: a.by, of: a.of, high: n('high'), med: n('med'), low: n('low'), fixed: n('fixed'), rejected: n('rejected'), note: a.note || '' });
       save(a.run, l);
       return out({ reviews: l.reviews.length });
     }

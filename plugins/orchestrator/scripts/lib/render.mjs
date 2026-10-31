@@ -117,7 +117,7 @@ const plural = (n, one, few, many) => (n === 1 ? one : n % 10 >= 2 && n % 10 <= 
 export function reviewLine(r) {
   const parts = [`${r.high || 0} wysokich`, `${r.med || 0} średnich`, `${r.low || 0} niskich`].join(' · ');
   const total = (r.high || 0) + (r.med || 0) + (r.low || 0);
-  return `${r.by} → ${r.of}: ${total ? `${total} ${plural(total, 'znalezisko', 'znaleziska', 'znalezisk')} (${parts}); naprawiono ${r.fixed || 0}, odrzucono ${r.rejected || 0}` : 'bez znalezisk'}${r.note ? ` — ${r.note}` : ''}`;
+  return `${r.id ? `${r.id}: ` : ''}${r.by} → ${r.of}: ${total ? `${total} ${plural(total, 'znalezisko', 'znaleziska', 'znalezisk')} (${parts}); naprawiono ${r.fixed || 0}, odrzucono ${r.rejected || 0}` : 'bez znalezisk'}${r.note ? ` — ${r.note}` : ''}`;
 }
 
 export function renderReport(data) {
