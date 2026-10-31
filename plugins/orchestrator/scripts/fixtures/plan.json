@@ -1,0 +1,10 @@
+{
+  "tasks": [
+    { "id": "F1", "title": "Contract and schema for the items endpoint", "type": "plan", "complexity": "S", "risk": "med" },
+    { "id": "F2", "title": "Implement POST /items with validation", "type": "implement", "complexity": "M", "risk": "med", "deps": ["F1"], "files": ["src/routes/items.ts"] },
+    { "id": "F3", "title": "Tests for /items", "type": "test", "complexity": "M", "risk": "low", "deps": ["F1"], "files": ["test/items.test.ts"] },
+    { "id": "F4", "title": "Rotate the production database credentials in the deploy config", "type": "implement", "complexity": "S", "risk": "high", "sensitivity": "sensitive", "files": ["deploy/config.yml"] },
+    { "id": "F5", "title": "Fix the loader for the customer env file", "type": "implement", "complexity": "S", "risk": "med", "files": [".env.production"] },
+    { "id": "F6", "title": "Summarize third-party library docs", "type": "research", "complexity": "S", "risk": "low", "sensitivity": "none" }
+  ]
+}
