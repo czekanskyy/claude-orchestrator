@@ -57,7 +57,7 @@ structured output · cost.
 ## B. Reading usage / limits per family
 
 Rule: official interface only; never read or print OAuth tokens or credential files. **No credential file is
-read by v3.** Each interface below uses the CLI's own auth.
+read by v3.** Each interface below uses the CLI's own auth. One flagged exception to "no local file": the Claude plan is detected from `organizationType`/`organizationName` in `~/.claude.json` (`oauthAccount`), which is account metadata; the tokens next to it are never parsed or printed.
 
 | # | Family | Interface | Verified | Used by v3 | Conf. |
 |---|---|---|---|---|---|

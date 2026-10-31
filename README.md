@@ -4,6 +4,17 @@ Prywatny plugin Claude Code: główna sesja jest orkiestratorem, deleguje pracę
 (Opus, Sonnet, Haiku) i workerom Codex (GPT) przez plugin Codexa, a każdą zmianę sprawdza druga
 rodzina modeli.
 
+## v3 (3.0.0)
+
+Plugin obsługuje rodziny Claude, GPT (Codex), Grok i Gemini (Antigravity CLI), model prywatności
+(zadania `sensitive` trafiają tylko do rodzin, które nie trenują na danych) i trzy komendy:
+`/orchestrator:configure` (kreator, zapis w `~/.claude/orchestrator/config.yaml`),
+`/orchestrator:doctor` (kontrola offline, `--live` robi jedno minimalne wywołanie na rodzinę),
+`/orchestrator:update` (aktualizacja rejestru modeli z diffem i zgodą). Stan użytkownika jest poza repo.
+Szczegóły: `plugins/orchestrator/CHANGELOG.md`, `docs/research-connectivity.md`.
+Uwaga: po instalacji z marketplace edycje `models.yaml` robione przez `/orchestrator:update` żyją w cache
+pluginu i znikają przy aktualizacji pluginu; trwałą zmianę zrób w tym repo i zainstaluj ponownie.
+
 ## Zawartość
 
 - `plugins/orchestrator/agents/`: `planner`, `security-reviewer`, `implementer`, `debugger`,
