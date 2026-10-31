@@ -13,6 +13,7 @@ import { effectiveSensitivity, familyAllowed, matchGlobList } from './lib/privac
 import { repoProfileStatus, rulesFrom, rulesLines } from './lib/repo-profile.mjs';
 import { statusMarkdown } from './usage.mjs';
 import { syncCodexLimits } from './lib/codex-limits.mjs';
+import { syncAgyLimits } from './lib/agy-limits.mjs';
 import { autoRunFor } from './lib/auto-core.mjs';
 
 const VALID_STATUS = ['active', 'unverified', 'requires_approval', 'deprecated'];
@@ -45,7 +46,7 @@ export function validate(reg) {
       if (!tpl.label || !tpl.tier) errors.push(`${at}.label/tier missing`);
       if (!(t.prefer_others < t.low_effort_confirm && t.low_effort_confirm <= t.cooldown)) errors.push(`${at}.thresholds must be ascending`);
       if (!Array.isArray(p.windows) || !p.windows.length) errors.push(`${at}.windows missing`);
-      if (!['statusline', 'app-server', 'estimate', 'manual'].includes(p.measurement)) errors.push(`${at}.measurement invalid`);
+      if (!['statusline', 'app-server', 'agy-usage', 'estimate', 'manual'].includes(p.measurement)) errors.push(`${at}.measurement invalid`);
       if (!p.verified_at) errors.push(`${at}.verified_at missing`);
       if (!tpl.sources?.length) errors.push(`${at}.sources missing`);
       const d = tpl.data_policy;
@@ -385,13 +386,15 @@ export function projectOrchestrators(root) {
   return found;
 }
 
-// Exact Codex usage is pulled on demand (zero model tokens); a snapshot younger than 5 minutes is reused.
-async function refreshCodexLimits(reg) {
-  const fam = reg.families.gpt;
-  if (!fam?.enabled || fam.pool && reg.pools[fam.pool]?.measurement !== 'app-server') return;
-  const snap = readJson(snapshotFile(fam.pool));
-  if (snap && Date.now() - Date.parse(snap.updated_at) < 5 * 60000) return;
-  await syncCodexLimits(reg);
+// Exact Codex and Gemini usage is pulled on demand (zero model tokens); a snapshot younger than 5 minutes is reused.
+async function refreshPulledLimits(reg) {
+  for (const [id, measurement, sync] of [['gpt', 'app-server', syncCodexLimits], ['gemini', 'agy-usage', syncAgyLimits]]) {
+    const fam = reg.families[id];
+    if (!fam?.enabled || !fam.pool || reg.pools[fam.pool]?.measurement !== measurement) continue;
+    const snap = readJson(snapshotFile(fam.pool));
+    if (snap && Date.now() - Date.parse(snap.updated_at) < 5 * 60000) continue;
+    await sync(reg);
+  }
 }
 
 export function preflight(reg) {
@@ -595,7 +598,7 @@ async function main(argv) {
     case 'validate': { const v = validate(reg); return out({ registry: REGISTRY_PATH, overlay: reg.meta.overlay || null, ...v }, v.ok ? 0 : 1); }
     case 'stale-check': return out(staleCheck(reg));
     case 'preflight': {
-      await refreshCodexLimits(reg);
+      await refreshPulledLimits(reg);
       const p = preflight(reg);
       if (!a.md) return out(p);
       const lines = [

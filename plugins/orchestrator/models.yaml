@@ -218,11 +218,12 @@ families:
     uses: [extra_review, research, simple_tasks]
     note: "Consumer plans: training on by default with an unclear opt-out, and wrapping agy in other tools may be unsupported (ToS unresolved). Never receives sensitive data unless the user overrides."
     plan_defaults:
-      # No documented non-interactive quota readout: per-call usage from the JSON envelope + manual readings.
-      measurement: manual
+      # Exact 5h/weekly quota via `agy -p /usage --output-format json` (answered by the CLI, zero model tokens): falls back to the estimate.
+      measurement: agy-usage
       windows:
         - {id: 5h, hours: 5, limit_units: null}
-      estimate_budget_units: {5h: 60, estimate: true}
+        - {id: 7d, hours: 168, limit_units: null}
+      estimate_budget_units: {5h: 60, 7d: 400, estimate: true}
       thresholds: {prefer_others: 60, low_effort_confirm: 85, cooldown: 100}
       max_parallel: 1
       cooldown_minutes_default: 60
@@ -232,7 +233,7 @@ families:
       gemini_free:
         label: "Gemini free (Antigravity)"
         tier: free
-        estimate_budget_units: {5h: 20, estimate: true}
+        estimate_budget_units: {5h: 20, 7d: 100, estimate: true}
         limits_note: "Small rolling allowance refreshed about every 5 hours."
         data_policy: {training_on_data: true, sensitive_ok: false, source: "https://discuss.ai.google.dev/t/antigravity-data-training-opt-out/125236", checked: "2026-10-31", note: "Forum reports only (low confidence): training on by default, opt-out unclear."}
         sources: ["https://antigravity.google/docs/cli/headless"]
@@ -245,7 +246,7 @@ families:
       gemini_ai_ultra:
         label: "Google AI Ultra"
         tier: ai_ultra
-        estimate_budget_units: {5h: 300, estimate: true}
+        estimate_budget_units: {5h: 300, 7d: 2000, estimate: true}
         limits_note: "Higher allowance (5x/20x tiers); quota refreshes about every 5 hours."
         data_policy: {training_on_data: unknown, sensitive_ok: false, source: "https://discuss.ai.google.dev/t/antigravity-data-training-opt-out/125236", checked: "2026-10-31", note: "Same consumer terms as AI Pro (low confidence)."}
         sources: ["https://support.google.com/googleone/answer/16286513"]

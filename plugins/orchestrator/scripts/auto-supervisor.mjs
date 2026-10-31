@@ -18,6 +18,7 @@ import { runClaudeTick, runAdapterTick, runChecks } from './lib/auto-worker.mjs'
 import { sendNotification, startKeepAwake, networkReachable, claudeLoggedIn } from './lib/auto-system.mjs';
 import { feedFromPool } from './lib/auto-limits.mjs';
 import { syncCodexLimits } from './lib/codex-limits.mjs';
+import { syncAgyLimits } from './lib/agy-limits.mjs';
 
 const SELF = fileURLToPath(import.meta.url);
 const TERMINAL = ['completed', 'blocked', 'aborted', 'handed_over', 'stopped'];
@@ -55,7 +56,11 @@ export function realDeps(paths, contract, reg) {
     reg, now, sleep, git, runClaude, runAdapter: runAdapterTick, runChecks,
     refreshUsage: async (limits, nowMs) => {
       const fams = enabledFamilies(reg).filter((f) => f !== 'claude');
-      if (fams.includes('gpt') && Date.now() - lastCodex > 5 * 60000) { lastCodex = Date.now(); try { await syncCodexLimits(reg); } catch { /* estimate stays */ } }
+      if (Date.now() - lastCodex > 5 * 60000) {
+        lastCodex = Date.now();
+        if (fams.includes('gpt')) { try { await syncCodexLimits(reg); } catch { /* estimate stays */ } }
+        if (fams.includes('gemini')) { try { await syncAgyLimits(reg); } catch { /* estimate stays */ } }
+      }
       for (const f of fams) { const pool = reg.families[f].pool; if (pool) feedFromPool(limits, f, poolStatus(reg, pool, Date.now()), nowMs); }
     },
     notify: (event) => sendNotification(contract.notify, event, paths),

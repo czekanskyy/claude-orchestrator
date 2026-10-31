@@ -2,6 +2,7 @@
 // Usage tracker CLI: pool status, Claude:GPT balance, manual pool readings, cooldowns, logging.
 import { pathToFileURL } from 'node:url';
 import { syncCodexLimits } from './lib/codex-limits.mjs';
+import { syncAgyLimits } from './lib/agy-limits.mjs';
 import {
   loadRegistry, findModel, allPoolStatus, poolStatus, appendUsage, readUsage, computeUnits,
   setCooldown, clearCooldown, setManualPct, refreshEstimatesCache, parseArgs, out, fail,
@@ -9,7 +10,7 @@ import {
 
 const USAGE = `usage.mjs <command>
   status [--md]                         pool table (exact for Claude via statusline, estimates otherwise)
-  sync-limits                           exact Codex 5h/weekly usage via codex app-server (zero model tokens) -> pool snapshot
+  sync-limits                           exact Codex (codex app-server) and Gemini (agy -p /usage) 5h/weekly usage, zero model tokens -> pool snapshots
   balance [--hours 168]                 units per family over the period (target ~1:1 for primary families)
   log --model M --effort E --task-type T --result ok|fail|limit [--tokens N] [--duration-ms N] [--note TEXT]
   set-pool <pool> <pct> [--window 5h|7d]  manual reading (e.g. from grok.com or chatgpt.com usage pages)
@@ -18,7 +19,7 @@ const USAGE = `usage.mjs <command>
 export function statusMarkdown(list) {
   const icon = { ok: '🟢', busy: '🟡', constrained: '🟠', cooldown: '🔴' };
   const rows = list.map((p) => {
-    const win = p.windows.map((w) => `${w.id}: ${w.pct}%${['statusline', 'app-server'].includes(w.source) ? '' : '~'}`).join(', ');
+    const win = p.windows.map((w) => `${w.id}: ${w.pct}%${['statusline', 'app-server', 'agy-usage'].includes(w.source) ? '' : '~'}`).join(', ');
     const cd = p.cooldown_until ? ` cooldown until ${p.cooldown_until}` : '';
     const mc = Object.keys(p.model_cooldowns || {}).length ? ` (model cooldown: ${Object.keys(p.model_cooldowns).join(', ')})` : '';
     return `| ${icon[p.level] || ''} ${p.pool} | ${p.plan} | ${p.pct}% | ${win} | ${p.exact ? 'exact' : p.measurement === 'manual' ? 'manual/estimate' : 'estimate'}${cd}${mc} |`;
@@ -54,7 +55,10 @@ async function main(argv) {
       if (a.md) { process.stdout.write(`${statusMarkdown(list)}\n`); return; }
       return out(list);
     }
-    case 'sync-limits': { const r = await syncCodexLimits(reg); return out(r, r.ok || r.skipped ? 0 : 1); }
+    case 'sync-limits': {
+      const res = { gpt: await syncCodexLimits(reg), gemini: await syncAgyLimits(reg) };
+      return out(res, Object.values(res).every((r) => r.ok || r.skipped) ? 0 : 1);
+    }
     case 'balance': return out(balance(reg, Number(a.hours || 168)));
     case 'log': {
       const m = findModel(reg, a.model);

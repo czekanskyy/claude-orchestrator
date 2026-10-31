@@ -314,6 +314,41 @@ function gemini() {
   common.clearCooldown(pool);
 }
 
+// ---------------------------------------------------------------- Gemini quota via `agy -p /usage` (mock)
+async function geminiLimits() {
+  log('\n=== GEMINI LIMITS (agy /usage, mock) ===');
+  const agy = await import(pathToFileURL(path.join(HERE, 'lib', 'agy-limits.mjs')).href);
+  const reg = common.loadRegistry();
+  const pool = reg.families.gemini.pool;
+  const snapPath = common.snapshotFile(pool);
+  fs.rmSync(snapPath, { force: true });
+  const sync = async (mode) => { process.env.MOCK_AGY_MODE = mode; try { return await agy.syncAgyLimits(reg); } finally { delete process.env.MOCK_AGY_MODE; } };
+
+  const ok = await sync('ok');
+  check('gemini-limits', 'sync reads the Gemini group: used = 1 - remaining (5h 40%, weekly 25%)', ok.ok && ok.five_hour_pct === 40 && ok.seven_day_pct === 25, JSON.stringify(ok));
+  const st = common.poolStatus(common.loadRegistry(), pool);
+  const w = Object.fromEntries(st.windows.map((x) => [x.id, x]));
+  check('gemini-limits', 'poolStatus uses the snapshot as an exact measurement for both windows', st.exact && w['5h']?.pct === 40 && w['5h']?.source === 'agy-usage' && w['7d']?.pct === 25 && st.pct === 40, JSON.stringify(st.windows));
+  check('gemini-limits', 'the table marks the readout exact (no ~)', /5h: 40%, 7d: 25% \| exact/.test(statusMarkdown([st])), statusMarkdown([st]));
+  const other = JSON.parse(fs.readFileSync(snapPath, 'utf8')).rate_limits;
+  check('gemini-limits', 'the Claude/GPT group of agy is not mixed into the Gemini pool', Object.keys(other).sort().join() === 'five_hour,seven_day' && other.five_hour.used_percentage === 40);
+
+  const stale = JSON.parse(fs.readFileSync(snapPath, 'utf8'));
+  stale.updated_at = new Date(Date.now() - 20 * 60000).toISOString();
+  fs.writeFileSync(snapPath, JSON.stringify(stale));
+  const st2 = common.poolStatus(common.loadRegistry(), pool);
+  check('gemini-limits', 'a snapshot older than 15 minutes falls back to the estimate', !st2.exact && st2.windows.every((x) => x.source === 'estimate'), JSON.stringify(st2.windows.map((x) => x.source)));
+
+  fs.rmSync(snapPath, { force: true });
+  const junk = await sync('garbage');
+  const nocmd = await sync('no-usage-command');
+  check('gemini-limits', 'non-JSON output or a CLI that does not know /usage -> error, no snapshot written', !junk.ok && !nocmd.ok && /CLI too old/.test(nocmd.error) && !fs.existsSync(snapPath), `${junk.error} | ${nocmd.error}`);
+  check('gemini-limits', 'parser: remaining 0 -> 100% used, missing buckets are skipped', (() => {
+    const p = agy.parseAgyUsage(JSON.stringify({ command: { name: 'usage', data: { groups: [{ name: 'Gemini Models', buckets: [{ window: '5h', remaining_fraction: 0, reset_time: '2099-01-01T00:00:00Z' }, { window: 'monthly', remaining_fraction: 0.5 }] }] } } }));
+    return p.ok && p.groups['Gemini Models'].five_hour.used_percentage === 100 && !p.groups['Gemini Models'].seven_day;
+  })());
+}
+
 // ---------------------------------------------------------------- v3: privacy routing
 function privacy() {
   log('\n=== PRIVACY ROUTING ===');
@@ -885,7 +920,7 @@ async function initScenario() {
 
 // autonomous mode: its own file (engine on temp repos, simulated clock, fake workers and usage feeds)
 const autoScenarioRun = async () => (await import('./selftest-auto.mjs')).autoScenario({ check, TMP, HERE, common, log });
-const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario, init: initScenario, auto: autoScenarioRun };
+const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, 'gemini-limits': geminiLimits, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario, init: initScenario, auto: autoScenarioRun };
 for (const [name, fn] of Object.entries(runs)) if (which === 'all' || which === name) await fn();
 
 log('\n=== RESULTS ===');

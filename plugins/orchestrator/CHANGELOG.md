@@ -1,5 +1,8 @@
 # Changelog: orchestrator registry
 
+## Unreleased: exact Gemini quota
+- Gemini pool measurement `agy-usage`: `agy -p /usage --output-format json` returns the 5h and weekly limits (zero model tokens); `usage.mjs sync-limits`, the doctor (`gemini limits` row), preflight and the auto supervisor refresh it. The plans gain a 7d window (estimate budgets only as fallback). Source: user correction 2026-10-31, verified live.
+
 ## Unreleased: `/orchestrator:auto` (autonomous mode)
 - New skill `auto` (user-triggered only): start contract (prompt-creator in strict mode, ≤ 3 AskUserQuestion rounds, allowlist shown for approval, feasibility estimate, preflight, explicit GO), then an external supervisor (`scripts/auto-supervisor.mjs`: guardian + engine, single-instance lock, heartbeat + watchdog, keep-awake, STOP/PAUSE/TAKEOVER/ABORT files) works in a dedicated worktree on `auto/<id>` with checkpoint commits and tags. Never a push, never main, no bypass-permissions (`dontAsk` + a generated narrow allowlist). Subcommands: start, status, report, review, pause, continue, stop, takeover, abort.
 - Limits: exact 5h/weekly tracking for Claude from `rate_limit_event`, Codex via app-server, Grok/Gemini estimates (soft only); soft/hard thresholds with a reserve, wait for the reset instead of failing, reroute (privacy permitting), never switch accounts or use overage; external failures wait with zero-token probes.

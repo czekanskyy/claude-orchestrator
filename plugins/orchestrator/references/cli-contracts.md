@@ -52,7 +52,7 @@ Simulating pool states: `ORCH_POOLS_OVERRIDE='{"chatgpt_business":{"pct":90},"cl
 - `doctor.mjs [--live] [--json] [--claude-live ok|fail:<why>] [--claude-tokens N]`: offline checks, exit 1 on any ❌. `--live`: one trivial call per enabled non-Claude family.
 - `update.mjs scan [--out f] | stamp --approved [--plans a,b] [--note T] [--date D]`: facts for `/orchestrator:update`; `stamp` only edits `meta.verified_at`, plan `checked` dates and CHANGELOG.
 - `migrate.mjs plan | backup | validate-state | cleanup --approved`: v2 → v3 (backup first; cleanup removes v2 skills and identical `orch-*` agents, leaves a statusline forwarding shim).
-- `usage.mjs sync-limits`: refresh the Codex pool snapshot from `codex app-server` (`account/rateLimits/read`, zero model tokens).
+- `usage.mjs sync-limits`: refresh the Codex pool snapshot from `codex app-server` (`account/rateLimits/read`) and the Gemini one from `agy -p /usage` (5h and weekly); zero model tokens each. Output `{gpt, gemini}`, exit 1 only when an enabled family fails.
 
 ## repo-scan.mjs / init.mjs (`/orchestrator:init`, details: `repo-init.md`)
 `repo-scan.mjs [--repo DIR] [--full] [--pretty]`: read-only scan, ONE compact JSON (repo state, commit/branch conventions, stack commands with source, policy docs with key sentences, hooks/CI/CODEOWNERS, other orchestrators, sensitivity by name only, critical paths, conflicts, fingerprint). Never opens a secret file.

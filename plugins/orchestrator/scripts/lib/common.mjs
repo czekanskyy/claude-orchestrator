@@ -425,15 +425,16 @@ export function poolStatus(reg, poolId, now = Date.now()) {
   const st = readPoolState(poolId);
   const budgets = pool.estimate_budget_units || {};
   const windows = [];
-  let snap = ['statusline', 'app-server'].includes(pool.measurement) ? readJson(snapshotFile(poolId)) : null;
-  // app-server snapshots are pulled on demand (usage.mjs sync-limits): stale after 15 minutes, then estimate.
-  if (snap && pool.measurement === 'app-server' && now - Date.parse(snap.updated_at) > 15 * 60000) snap = null;
+  const pulled = ['app-server', 'agy-usage'].includes(pool.measurement);
+  let snap = pulled || pool.measurement === 'statusline' ? readJson(snapshotFile(poolId)) : null;
+  // app-server / agy-usage snapshots are pulled on demand (usage.mjs sync-limits): stale after 15 minutes, then estimate.
+  if (snap && pulled && now - Date.parse(snap.updated_at) > 15 * 60000) snap = null;
 
   for (const w of pool.windows) {
     const key = w.id === '5h' ? 'five_hour' : w.id === '7d' ? 'seven_day' : w.id;
     const s = snap?.rate_limits?.[key];
     if (s && typeof s.used_percentage === 'number' && (!s.resets_at || s.resets_at * 1000 > now)) {
-      windows.push({ id: w.id, pct: +s.used_percentage.toFixed(1), source: pool.measurement === 'app-server' ? 'app-server' : 'statusline', resets_at: s.resets_at ? new Date(s.resets_at * 1000).toISOString() : null, snapshot_at: snap.updated_at });
+      windows.push({ id: w.id, pct: +s.used_percentage.toFixed(1), source: pulled ? pool.measurement : 'statusline', resets_at: s.resets_at ? new Date(s.resets_at * 1000).toISOString() : null, snapshot_at: snap.updated_at });
       continue;
     }
     const since = now - w.hours * 3600000;

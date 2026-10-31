@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadRegistry, enabledFamilies, allPoolStatus, parseArgs, runProcess, effortRank, PLUGIN_DIR, repoRoot, readProjectPrefs } from './lib/common.mjs';
 import { repoProfileStatus, rulesFrom, profileConflicts } from './lib/repo-profile.mjs';
 import { syncCodexLimits } from './lib/codex-limits.mjs';
+import { syncAgyLimits } from './lib/agy-limits.mjs';
 import { readConfig, validateConfig, serializeConfig, CONFIG_SCHEMA_VERSION } from './lib/config.mjs';
 import { cliInfo, authCheck } from './lib/health.mjs';
 import { validate, staleCheck, route, projectOrchestrators } from './registry.mjs';
@@ -123,12 +124,18 @@ async function checkFamilies(reg) {
   }
 }
 
-// Exact Codex usage readout (zero tokens); the pool table below uses it when the call works.
+// Exact Codex and Gemini usage readouts (zero tokens); the pool table below uses them when the calls work.
 async function checkLimits(reg) {
-  if (!reg.families.gpt?.enabled) return;
-  const r = await syncCodexLimits(reg);
-  if (r.ok) add('gpt limits', 'ok', `codex app-server: 5h ${r.five_hour_pct}% · 7d ${r.seven_day_pct}% (plan ${r.plan_type})`);
-  else add('gpt limits', 'warn', `exact readout unavailable (${r.error}): estimate used`, 'codex login; experimental interface may have changed');
+  if (reg.families.gpt?.enabled) {
+    const r = await syncCodexLimits(reg);
+    if (r.ok) add('gpt limits', 'ok', `codex app-server: 5h ${r.five_hour_pct}% · 7d ${r.seven_day_pct}% (plan ${r.plan_type})`);
+    else add('gpt limits', 'warn', `exact readout unavailable (${r.error}): estimate used`, 'codex login; experimental interface may have changed');
+  }
+  if (reg.families.gemini?.enabled) {
+    const r = await syncAgyLimits(reg);
+    if (r.ok) add('gemini limits', 'ok', `agy /usage: 5h ${r.five_hour_pct}% · 7d ${r.seven_day_pct}%`);
+    else add('gemini limits', 'warn', `exact readout unavailable (${r.error}): estimate used`, 'run agy once and sign in; update agy if /usage is not a command');
+  }
 }
 
 // Adapters run on fixtures in an isolated state dir: simulate (all adapters) and a mock agy binary (Gemini).
