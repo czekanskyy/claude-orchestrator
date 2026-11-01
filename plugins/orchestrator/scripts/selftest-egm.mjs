@@ -197,7 +197,7 @@ export async function egmScenario(ctx) {
   const dry2 = dryLib.dryRun(reg, fx.critical[0], { explicit: true });
   const dry3 = dryLib.dryRun(reg, fx.not_critical[0], {});
   log(`\n--- dry run (critical sample)\n${dry1.text}`);
-  check(S, 'dry run of a critical task: gate -> cost estimate -> consent question -> planned EGM phases, nothing started, zero model calls', dry1.model_calls === 0 && dry1.gate.action === 'ask' && /egm_gate: ask/.test(dry1.text) && /Cost: \d+ agents/.test(dry1.text) && /Question: .*EGM/.test(dry1.text) && /EGM phases if accepted/.test(dry1.text) && /EG-design Elephant/.test(dry1.text) && /Gosia|Grzesiek/.test(dry1.text));
+  check(S, 'dry run of a critical task: gate -> cost estimate -> consent question -> planned EGM phases, nothing started, zero model calls', dry1.model_calls === 0 && dry1.gate.action === 'ask' && /egm_gate: ask/.test(dry1.text) && /Cost: \d+ agents/.test(dry1.text) && /Question: .*EGM/.test(dry1.text) && /EGM phases if accepted/.test(dry1.text) && /EG-design Elephant/.test(dry1.text) && /Goldfish Reviewer/.test(dry1.text) && !/Gosia|Grzesiek/.test(dry1.text));
   check(S, 'dry run: --egm skips the question and shows the phases; a trivial task shows no EGM at all', dry2.gate.action === 'egm' && !/Question:/.test(dry2.text) && /EGM phases if accepted/.test(dry2.text) && dry3.gate.action === 'continue' && !/EGM phases/.test(dry3.text));
 
   // ---------------------------------------------------------------- cross-family Goldfish: only where the privacy filter allows

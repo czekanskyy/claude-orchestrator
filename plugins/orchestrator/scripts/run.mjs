@@ -6,13 +6,15 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { loadRegistry, allPoolStatus, readUsage, parseArgs, out, fail, STATE_DIR, repoRoot } from './lib/common.mjs';
-import { addRoute, assignmentTable, statusTable, renderReport, lintPrompt, persona, STATUS } from './lib/render.mjs';
+import { addRoute, assignmentTable, breakdownTable, taskReport, statusTable, renderReport, lintPrompt, persona, STATUS } from './lib/render.mjs';
 
 const USAGE = `run.mjs <command>
   init [--slug S] [--repo DIR]                       create runs/<ts>-run-<slug>/ with ledger.json (pool + git baseline)
-  plan --run DIR --route route.json                  add routed assignments to the ledger (waves, personas)
+  plan --run DIR --route route.json                  add routed assignments to the ledger (waves, agent labels; inline items too)
   add --run DIR --id I --stage S --role R --model M --effort E --title T [--wave N]   a row not produced by the router
-  assign --run DIR [--wave N] [--json]               status table so far (if any) + assignment table of the next pending wave; marks it 🔄
+  assign --run DIR [--wave N] [--json]               first wave of a multi-wave plan: the whole breakdown; later: status so far + assignment table of the next pending wave; marks it 🔄
+  breakdown --run DIR                                the whole split: wave, task, agent, model · effort, status
+  finish --run DIR <id> [--status done|failed|attention] [--report TEXT] [--note TEXT]   set the status and print the report block of that one fragment (Polish, ≤ 5 lines)
   set --run DIR <id> --status done|progress|pending|attention|failed [--note TEXT]
   status --run DIR [--summary TEXT]...               status table (+ at most 3 summary lines)
   report --run DIR --data report.json [--strict]     final report (Polish, ≤ 35 lines); pools and commits auto-filled
@@ -80,12 +82,31 @@ async function main(argv) {
       const rows = l.rows.filter((r) => r.wave === wave && r.status === 'pending');
       if (!rows.length) return fail('no pending rows in that wave');
       const status = l.rows.some((r) => r.status !== 'pending') ? statusTable(l.rows) : null; // progress so far, shown before the next wave
+      const first = !status && new Set(l.rows.map((r) => r.wave)).size > 1; // first wave of a multi-wave plan: show the whole split
       for (const r of rows) r.status = 'progress';
       save(a.run, l);
-      const table = assignmentTable(rows);
+      const table = first ? breakdownTable(l.rows) : assignmentTable(rows);
       const show = `${status ? `${status}\n\n` : ''}${table}`;
       if (!a.json) { process.stdout.write(`${show}\n`); return; }
-      return out({ wave, show, dispatch: rows.map((r) => ({ id: r.id, description: `${r.agent}: ${r.id}`, ...r.dispatch })) });
+      const work = rows.filter((r) => !r.inline);
+      return out({ wave, show, dispatch: work.map((r) => ({ id: r.id, description: `${r.agent}: ${r.id} ${r.title.slice(0, 40)}`, ...r.dispatch })), inline: rows.filter((r) => r.inline).map((r) => r.id) });
+    }
+    case 'breakdown': {
+      process.stdout.write(`${breakdownTable(need().rows)}\n`);
+      return;
+    }
+    case 'finish': {
+      const l = need();
+      const row = l.rows.find((r) => r.id === a._[0]);
+      if (!row) return fail(`unknown row ${a._[0]}`);
+      const st = a.status || 'done';
+      if (!STATUS[st]) return fail(`--status must be one of ${Object.keys(STATUS).join('|')}`);
+      row.status = st;
+      row.report = a.report && a.report !== true ? String(a.report) : '';
+      row.note = a.note !== undefined && a.note !== true ? String(a.note) : (row.note || row.report.split(/\r?\n/)[0] || '');
+      save(a.run, l);
+      process.stdout.write(`${taskReport(row, l.rows, row.report)}\n`);
+      return;
     }
     case 'set': {
       const l = need();

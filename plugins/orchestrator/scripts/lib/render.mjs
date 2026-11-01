@@ -34,31 +34,33 @@ export function loadTemplate(name) {
   return fs.readFileSync(path.join(PLUGIN_DIR, 'templates', `${name}.md`), 'utf8');
 }
 
-// ---------------------------------------------------------------- personas (deterministic, no model call)
-const PERSONAS = {
-  implementer: ['🔨', ['Bartek', 'Basia', 'Błażej', 'Bogdan', 'Beata', 'Bruno']],
-  mechanic: ['🧰', ['Marek', 'Marta', 'Michał', 'Magda', 'Mikołaj', 'Monika']],
-  debugger: ['🐞', ['Darek', 'Dorota', 'Damian', 'Daria', 'Dawid', 'Dagmara']],
-  planner: ['🧭', ['Paweł', 'Patrycja', 'Piotr', 'Paulina', 'Przemek', 'Pola']],
-  researcher: ['📚', ['Wiktor', 'Wiola', 'Witek', 'Weronika', 'Wojtek', 'Wanda']],
-  reviewer: ['🧐', ['Rysiek', 'Renata', 'Radek', 'Róża', 'Robert', 'Roksana']],
-  'security-reviewer': ['🛡️', ['Sebastian', 'Sylwia', 'Seweryn', 'Sandra', 'Stefan', 'Szymon']],
-  runner: ['🏃', ['Tomek', 'Tola', 'Tymon', 'Teresa', 'Tadek', 'Tosia']],
-  'prompt-creator': ['✍️', ['Kuba', 'Kinga', 'Karol', 'Klara', 'Kamil', 'Kalina']],
-  elephant: ['🐘', ['Edek', 'Ela', 'Emil', 'Ewa', 'Eryk', 'Edyta']],
-  goldfish: ['🐟', ['Gosia', 'Grzesiek', 'Gabi', 'Gienek', 'Greta', 'Gucio']],
-  synthesizer: ['🧩', ['Iza', 'Igor', 'Irena', 'Ignacy', 'Ilona', 'Ireneusz']],
+// ---------------------------------------------------------------- agent labels (deterministic, no model call)
+// A label is the role itself (emoji + role name), so the user reads what an agent does, not an invented first name.
+const ROLE_LABELS = {
+  implementer: ['🔨', 'Implementer'],
+  mechanic: ['🧰', 'Mechanic'],
+  debugger: ['🐞', 'Debugger'],
+  planner: ['🧭', 'Planner'],
+  researcher: ['📚', 'Researcher'],
+  reviewer: ['🧐', 'Reviewer'],
+  'security-reviewer': ['🛡️', 'Security Reviewer'],
+  runner: ['🏃', 'Runner'],
+  'prompt-creator': ['✍️', 'Prompt Creator'],
+  elephant: ['🐘', 'Design Author'],
+  goldfish: ['🐟', 'Goldfish Reviewer'],
+  synthesizer: ['🧩', 'Synthesizer'],
+  orchestrator: ['🎛️', 'Orchestrator'],
 };
 
-// n = how many agents of this role were already named in the run (0-based).
+// n = how many agents of this role were already labelled in the run (0-based): "Implementer", "Implementer 2", ...
 export function persona(role, n = 0) {
-  const [emoji, names] = PERSONAS[role] || ['🤖', ['Agent']];
-  const lap = Math.floor(n / names.length);
-  return `${emoji} ${names[n % names.length]}${lap ? ` ${lap + 1}` : ''}`;
+  const [emoji, name] = ROLE_LABELS[role] || ['🤖', 'Agent'];
+  return `${emoji} ${name}${n ? ` ${n + 1}` : ''}`;
 }
 
 export function roleOf(a, reg) {
   if (a.role) return a.role;
+  if (a.kind === 'inline') return 'orchestrator';
   if (a.kind === 'cross_review' || a.kind === 'extra_review') return a.lens === 'security' ? 'security-reviewer' : 'reviewer';
   return String(reg.meta.subagent_for_type[a.type] || '').replace(/^orch-/, '') || 'implementer';
 }
@@ -81,9 +83,10 @@ export function waves(items) {
   return Object.fromEntries(items.map((i) => [i.id, depth(i)]));
 }
 
-// route() assignments -> ledger rows with personas. `ledger` supplies counters and the wave offset.
+// route() assignments -> ledger rows with agent labels. `ledger` supplies counters and the wave offset.
+// Inline items (written by the main session itself) get a row too, so the breakdown table shows the whole split.
 export function addRoute(ledger, route, reg) {
-  const items = route.assignments.filter((a) => a.kind !== 'inline');
+  const items = route.assignments;
   const w = waves(items);
   const offset = Math.max(0, ...ledger.rows.map((r) => r.wave));
   for (const a of items) {
@@ -93,6 +96,7 @@ export function addRoute(ledger, route, reg) {
     ledger.rows.push({
       id: a.id, wave: offset + w[a.id], stage: stageOf(a), role, agent: persona(role, n),
       model: a.model || '—', effort: a.effort || '—', title: a.title, dispatch: a.dispatch || null,
+      ...(a.kind === 'inline' ? { inline: true } : {}),
       status: a.error ? 'attention' : 'pending', note: a.error || '',
     });
   }
@@ -103,6 +107,21 @@ const clip = (s, n = 64) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 export function assignmentTable(rows) {
   return renderTemplate(loadTemplate('assignment'), { rows: rows.map((r) => ({ agent: r.agent, model: r.model, effort: r.effort, task: clip(`${r.id} ${r.title}`) })) });
+}
+
+// The whole split at once: every fragment with its wave, agent, model and current status. Shown with the first wave.
+export function breakdownTable(rows) {
+  return renderTemplate(loadTemplate('breakdown'), { rows: rows.map((r) => ({ wave: r.wave, task: clip(`${r.id} ${r.title}`), agent: r.agent, model: r.model, effort: r.effort, status: STATUS[r.status] || r.status })) });
+}
+
+// Report block for one finished fragment (what was done, by whom, progress of the run). `lines` = the worker's result.
+export function taskReport(row, rows, lines = []) {
+  const done = rows.filter((r) => r.status === 'done').length;
+  const body = [].concat(lines).flatMap((l) => String(l).split(/\r?\n/)).map((l) => l.replace(/^\s*[-*]\s*/, '').trim()).filter(Boolean).slice(0, 5).map((l) => clip(l, 200));
+  return renderTemplate(loadTemplate('taskreport'), {
+    icon: STATUS[row.status] || row.status, id: row.id, stage: row.stage, title: clip(row.title, 80), agent: row.agent, model: row.model, effort: row.effort,
+    progress: `${done}/${rows.length} zadań gotowych`, lines: body, note: row.note || 'bez szczegółów',
+  });
 }
 
 export function statusTable(rows, summary = []) {

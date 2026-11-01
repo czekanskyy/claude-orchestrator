@@ -51,7 +51,7 @@ Without a config, only the main family is enabled and nothing sensitive leaves i
 ## Commands
 | Command | What it does |
 |---|---|
-| `/orchestrator:orchestrate [--dry-run] [--egm] [--use global\|project] <task>` | The main flow. `--dry-run` shows path, personas, routing and cost with zero model calls. |
+| `/orchestrator:orchestrate [--dry-run] [--egm] [--use global\|project] <task>` | The main flow. `--dry-run` shows path, agent labels, routing and cost with zero model calls. |
 | `/orchestrator:configure [--show]` | Families, plans, privacy, main family, EGM and `auto` defaults. Idempotent. |
 | `/orchestrator:doctor [--live]` | Health check as one table: CLIs, logins, adapters, config, registry age, agents, privacy filter, pools, EGM, repo profile. |
 | `/orchestrator:update` | Refreshes the vendor-fact registry (models, efforts, limits, data policies) with a sourced diff and your approval. Never touches your config or repo profiles. |
@@ -75,8 +75,10 @@ Without a config, only the main family is enabled and nothing sensitive leaves i
 7. **Review.** A different family, low context, low trust, at most two fix rounds. Trivial low-risk changes are exempt. Disputes are settled by a cheap runnable check.
 8. **Report.** One compact report, with pools and commits filled in automatically.
 
-### Personas
-Each agent in the tables gets a role emoji and a first name (🔨 implementer, 🧭 planner, 🧐 reviewer, ✍️ spec writer, 🐘 Elephant and 🐟 Goldfish in EGM mode, and so on), so a glance tells you who is doing what. They are assigned deterministically per run and cost nothing. The names are currently Polish.
+### Agent labels and progress reports
+Each agent in the tables gets a role emoji and its role as the name (🔨 Implementer, 🧭 Planner, 🧐 Reviewer, ✍️ Prompt Creator, 🐘 Design Author and 🐟 Goldfish Reviewer in EGM mode, and so on; a second one of a role is "Implementer 2"), so a glance tells you who is doing what. Labels are assigned deterministically per run and cost nothing.
+
+With a multi-wave plan the first message shows the whole breakdown (wave, task, agent, model · effort, status); every finished task then gets its own short report block (what was done, key files, checks, open issues, progress `n/m`).
 
 ### Prompt-creator
 For complex requests the orchestrator never improvises from your wording. `prompt-creator` is a read-only spec writer (repo access plus doc lookup) that returns one final prompt with goal, scope, constraints, acceptance criteria and checks, and a linter checks that the required sections are present and the prompt stands on its own before anything is dispatched. It is also used with a stricter bar for [`auto`](#unattended-runs-orchestratorauto) contracts.

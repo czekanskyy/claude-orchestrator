@@ -1,5 +1,10 @@
 # Changelog: orchestrator registry
 
+## 2026-11-01: role labels and per-task reporting
+- Agents in the tables and in the UI are labelled by role (`🔨 Implementer`, `🧭 Planner`, `🧐 Reviewer`, `🛡️ Security Reviewer`, `✍️ Prompt Creator`, `🐘 Design Author`, `🐟 Goldfish Reviewer` ...; repeats `Implementer 2`) instead of invented first names.
+- Why the user did not see the split and the per-task reports: (1) the full plan was never shown, only one wave table at a time, and inline items had no row at all; (2) the silence policy allowed turns without text and the status table only reached the user inside the NEXT `assign`, so the last tasks of a run (and every task of a single wave) never got a report before the final one.
+- Fix: the first `assign` of a multi-wave plan shows the whole breakdown (`templates/breakdown.md`: wave, task, agent, model · effort, status); inline items are ledger rows too (`.inline` in the `assign` output); new `run.mjs breakdown` and `run.mjs finish` (sets the status and prints the report block of that one fragment, `templates/taskreport.md`); SKILL.md makes the block after each finished task mandatory.
+
 ## 2026-10-31: exact Gemini quota
 - Gemini pool measurement `agy-usage`: `agy -p /usage --output-format json` returns the 5h and weekly limits (zero model tokens); `usage.mjs sync-limits`, the doctor (`gemini limits` row), preflight and the auto supervisor refresh it. The plans gain a 7d window (estimate budgets only as fallback). Source: user correction 2026-10-31, verified live.
 
