@@ -38,7 +38,7 @@ docs/                                  this documentation
 | `lib/config.mjs` | `config.yaml` schema, validation, secret rejection, atomic writes |
 | `lib/privacy.mjs` | effective sensitivity, family allowance, glob matching |
 | `registry.mjs` | `candidates()`, `route()`, `escalate`, `preflight`, `update` diff |
-| `lib/render.mjs` | tables, personas, report |
+| `lib/render.mjs` | tables (breakdown, assignment, status), role labels, per-task report, final report |
 | `lib/egm.mjs`, `egm-gate.mjs`, `egm.mjs` | locate and fingerprint the EGM plugin, the `critical` rubric, cost estimate, briefs, phase state |
 | `lib/auto-*.mjs`, `auto.mjs`, `auto-supervisor.mjs` | the unattended engine: contract, core (git guard, state), limits, decisions, worker, report, EGM phases |
 | `lib/repo-*.mjs`, `init.mjs`, `repo-scan.mjs` | the per-repo profile |

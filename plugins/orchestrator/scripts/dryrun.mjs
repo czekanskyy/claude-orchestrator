@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// --dry-run: triage + path + egm_gate + personas + assignment tables, with ZERO model calls.
+// --dry-run: triage + path + egm_gate + agent labels + breakdown and assignment tables, with ZERO model calls.
 // Without --tasks the post-spec/post-split plan is only described (it needs the model); with --tasks (a plan like
 // fixtures/plan.json) it is routed and shown per wave.
 // Usage: node dryrun.mjs (--text "..." | --file F) [--tasks plan.json] [--egm]
@@ -9,7 +9,7 @@ import { loadRegistry, parseArgs, fail } from './lib/common.mjs';
 import { route } from './registry.mjs';
 import { triage } from './triage.mjs';
 import { egmGate } from './egm-gate.mjs';
-import { addRoute, assignmentTable, persona } from './lib/render.mjs';
+import { addRoute, assignmentTable, breakdownTable, persona } from './lib/render.mjs';
 import { egmStatus, estimateEgm } from './lib/egm.mjs';
 
 // The EGM phases the gate would run after a yes, as an assignment table (personas and models come from the same router).
@@ -54,6 +54,7 @@ export function dryRun(reg, text, { tasks, pools, explicit = false, status } = {
     `egm_gate: ${gate.action} (critical=${gate.critical}${gate.rubric.categories.length ? ` [${gate.rubric.categories.join(', ')}]` : ''}, triage flag=${gate.candidate}, mode=${gate.settings.mode}, repo setting=${gate.setting}) ${gate.note}`,
     ...(gate.action === 'ask' ? ['', 'EGM proposal (nothing starts without a yes)', `Cost: ${gate.estimate.summary}`, `Question: ${gate.question.question}`, `Options: ${gate.question.options.map((o) => o.label).join(' / ')}`] : []),
     ...(['ask', 'egm'].includes(gate.action) && gate.estimate_full?.ok ? ['', `EGM phases if accepted (${gate.settings.review} review): design → Goldfish review stages with Elephant resolve after each → your approval → implementation by routed workers → drift check`, egmPhaseTable(gate), '(implementation workers are planned from the approved design and cost the same as in the normal flow; resolve turns resume the Elephant)'] : []),
+    ...(new Set(ledger.rows.map((r) => r.wave)).size > 1 ? ['', 'Breakdown (shown to the user with the first wave)', breakdownTable(ledger.rows)] : []),
     ...blocks.flatMap((b) => ['', `${b.label}`, b.table]),
     '', 'Model calls: 0',
   ].join('\n');

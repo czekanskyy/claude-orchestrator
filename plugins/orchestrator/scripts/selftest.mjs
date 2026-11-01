@@ -592,8 +592,11 @@ function flowScenario() {
   const hg = dryLib.dryRun(reg, f.huge[0], { pools });
   check('flow', "huge: the split is the orchestrator's own step (no agent row)", hg.rows.length === 0 && /Split/.test(hg.text));
 
-  const names = Array.from({ length: 8 }, (_, i) => renderLib.persona('implementer', i));
-  check('flow', 'persona counter gives distinct names, then a numeric suffix', new Set(names).size === 8 && /\s2$/.test(names[6]), names.join(', '));
+  const names = Array.from({ length: 3 }, (_, i) => renderLib.persona('implementer', i));
+  check('flow', 'agent labels are role names; repeats get a numeric suffix', names[0] === '🔨 Implementer' && names[1] === '🔨 Implementer 2' && names[2] === '🔨 Implementer 3', names.join(', '));
+  const roles = ['implementer', 'mechanic', 'debugger', 'planner', 'researcher', 'reviewer', 'security-reviewer', 'runner', 'prompt-creator', 'elephant', 'goldfish', 'synthesizer', 'orchestrator'];
+  const labels = roles.map((r) => renderLib.persona(r));
+  check('flow', 'every role has its own sensible label (no first names)', new Set(labels).size === roles.length && labels.every((l) => /^\S+ [A-Z][a-z]+( [A-Z][a-z]+)*$/.test(l)), labels.join(', '));
 
   const sens = triageLib.triage(f.sensitive[0], reg);
   const route = registry.route(reg, [
@@ -611,12 +614,17 @@ function renderScenario() {
   log('\n=== RENDER: tables, report cap, prompt lint, run ledger ===');
   const reg = common.loadRegistry();
   const rows = [
-    { id: 'T1', stage: 'Implement', agent: '🔨 Bartek', model: 'claude-sonnet', effort: 'medium', title: 'Add | pipe', status: 'done', note: 'ok' },
-    { id: 'T2', stage: 'Review', agent: '🧐 Rysiek', model: 'gpt-6.1-sol', effort: 'low', title: 'Review T1', status: 'progress', note: '' },
-    { id: 'T3', stage: 'Tests', agent: '🔨 Basia', model: 'claude-haiku', effort: 'low', title: 'Tests', status: 'pending', note: '' },
-    { id: 'T4', stage: 'Implement', agent: '🔨 Błażej', model: 'claude-sonnet', effort: 'low', title: 'x', status: 'attention', note: 'brak testów' },
-    { id: 'T5', stage: 'Implement', agent: '🔨 Bogdan', model: 'claude-sonnet', effort: 'low', title: 'x', status: 'failed', note: 'padł build' },
+    { id: 'T1', wave: 1, stage: 'Implement', agent: '🔨 Implementer', model: 'claude-sonnet', effort: 'medium', title: 'Add | pipe', status: 'done', note: 'ok' },
+    { id: 'T2', wave: 2, stage: 'Review', agent: '🧐 Reviewer', model: 'gpt-6.1-sol', effort: 'low', title: 'Review T1', status: 'progress', note: '' },
+    { id: 'T3', wave: 2, stage: 'Tests', agent: '🔨 Implementer 2', model: 'claude-haiku', effort: 'low', title: 'Tests', status: 'pending', note: '' },
+    { id: 'T4', wave: 3, stage: 'Implement', agent: '🔨 Implementer 3', model: 'claude-sonnet', effort: 'low', title: 'x', status: 'attention', note: 'brak testów' },
+    { id: 'T5', wave: 3, stage: 'Implement', agent: '🔨 Implementer 4', model: 'claude-sonnet', effort: 'low', title: 'x', status: 'failed', note: 'padł build' },
   ];
+  const bd = renderLib.breakdownTable(rows);
+  check('render', 'breakdown table: wave, task, agent, model · effort and status for every fragment, pipes escaped', bd.split('\n').length === 2 + rows.length && /\| Wave \| Task \| Agent \| Model · effort \| Status \|/.test(bd) && /Add \\\| pipe/.test(bd) && /\| 2 \| T2 Review T1 \| 🧐 Reviewer \| gpt-6\.1-sol · low \| 🔄 \|/.test(bd), bd);
+  const tr = renderLib.taskReport({ ...rows[0] }, rows, '- Dodano endpoint\n- Testy: 3/3');
+  check('render', 'task report: heading with status, agent · model · effort · progress, worker lines', /^### ✅ T1 · Implement: Add \| pipe/.test(tr) && /🔨 Implementer · claude-sonnet · medium · 1\/5 zadań gotowych/.test(tr) && /- Dodano endpoint\n- Testy: 3\/3$/.test(tr), tr);
+  check('render', 'task report without lines falls back to the note', /- brak testów$/.test(renderLib.taskReport(rows[3], rows, '')), renderLib.taskReport(rows[3], rows, ''));
   const at = renderLib.assignmentTable(rows);
   check('render', 'assignment table: header, separator, one row per agent, pipes escaped', at.split('\n').length === 2 + rows.length && /\| Agent \| Model · effort \| Task \|/.test(at) && /Add \\\| pipe/.test(at), at);
   const st = renderLib.statusTable(rows, ['a', 'b', 'c', 'd', 'e']);
@@ -625,7 +633,7 @@ function renderScenario() {
 
   const data = {
     result: 'done', title: 'Eksport CSV', summary: 'Dodano przycisk i endpoint.',
-    done: ['Endpoint /export (Sonnet, medium)', 'Przycisk w UI (Bartek)', 'Testy jednostkowe'],
+    done: ['Endpoint /export (Sonnet, medium)', 'Przycisk w UI (Implementer)', 'Testy jednostkowe'],
     tests: ['npm test: 42/42 ✅'], not_done: ['Eksport XLSX (poza zakresem)'],
     decisions: ['Separator „,” i UTF-8', 'Bez nowych zależności'],
     reviews: [{ by: 'GPT', of: 'Claude', high: 1, med: 1, low: 0, fixed: 1, rejected: 1, note: 'jedno obalone testem' }],
@@ -658,7 +666,10 @@ function renderScenario() {
   const plan = JSON.parse(run('plan', '--run', init.dir, '--route', routeFile).stdout);
   check('render', 'run.mjs plan builds waves into the ledger', plan.added >= 3 && plan.waves >= 2, JSON.stringify(plan));
   const w1 = JSON.parse(run('assign', '--run', init.dir, '--json').stdout);
-  check('render', 'assign shows the first wave, marks it in progress, gives persona descriptions', w1.wave === 1 && /^\S+ \S+: T1/.test(w1.dispatch[0].description) && w1.dispatch[0].via && w1.show.includes('| Agent |'), JSON.stringify(w1.dispatch[0]));
+  check('render', 'assign shows the first wave, marks it in progress, gives role-label descriptions', w1.wave === 1 && /^\S+ \S+: T1/.test(w1.dispatch[0].description) && w1.dispatch[0].via && w1.show.includes('| Agent |'), JSON.stringify(w1.dispatch[0]));
+  check('render', 'the first assign of a multi-wave plan shows the WHOLE breakdown (every fragment, later waves pending)', w1.show.includes('| Wave | Task | Agent |') && w1.show.split('\n').filter((l) => /^\| \d+ \|/.test(l)).length === plan.added && w1.show.includes('⏳') && w1.show.includes('🔄'), w1.show);
+  const fin = run('finish', '--run', init.dir, 'T1', '--status', 'done', '--report', '- Dodano endpoint\n- Testy: 3/3');
+  check('render', 'finish prints the report block of that fragment and records the status', fin.status === 0 && /^### ✅ T1 · /.test(fin.stdout) && /1\/\d+ zadań gotowych/.test(fin.stdout) && /- Testy: 3\/3/.test(fin.stdout), fin.stdout + fin.stderr);
   check('render', 'assign does not hand out the same rows twice', run('assign', '--run', init.dir, '--wave', '1').status !== 0);
   run('set', '--run', init.dir, 'T1', '--status', 'done', '--note', 'ok');
   const w2 = JSON.parse(run('assign', '--run', init.dir, '--json').stdout);
