@@ -28,7 +28,7 @@ docs/                                  this documentation
 3. Complex: the `prompt-creator` agent writes `prompt.md`; `run.mjs save-prompt` lints it. Huge: split into `part-N.md`.
 4. `egm-gate.mjs` decides `continue | ask | egm | unavailable | stop` from the rubric, the setting and the consent. Only `egm` leads to the EGM runbook (`references/egm-flow.md`).
 5. `registry.mjs route` takes a task list and returns, per task, a model, effort and cross-review, after the privacy filter, the role-bounded tier, the effort matrix and live pool balance.
-6. `run.mjs assign` renders the assignment table and the dispatch list. Claude agents are spawned natively; `run-codex.mjs`, `run-grok.mjs` and `run-gemini.mjs` wrap the other CLIs behind one JSON contract (`lib/adapter.mjs`, `references/cli-contracts.md`).
+6. `run.mjs assign` renders the assignment table and the dispatch list. Claude agents are spawned natively; `run-codex.mjs`, `run-grok.mjs` and `run-gemini.mjs` wrap the other CLIs behind one JSON contract (`lib/adapter.mjs`, `references/cli-contracts.md`). They are always started with `--detach`: the worker runs in its own process and writes `progress.log` (Codex's own job status, Grok/Gemini stderr) and `result.json`; `job.mjs wait|status|cancel` returns progress snapshots every few minutes, so a long task never looks like a hang (`references/workers.md`).
 7. The runner agent executes the verification commands; `registry.mjs escalate` decides what a failure means; `run.mjs report` renders the final report from the ledger.
 
 ## Key modules

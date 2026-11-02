@@ -1,5 +1,11 @@
 # Changelog: orchestrator registry
 
+## 2026-11-02: detached workers, live progress, plan table, less overhead
+- Observed (user report): a Codex worker ran two tasks of ~50 min each with no feedback for ~2 h; the plan/assignment table was not seen; a comparable task took 2 h+ against 30-45 min with the first version.
+- Cause 1: adapters ran the worker in the foreground until it ended (`task --json` prints nothing before the end) and killed it at the timeout, so a task that needed 51 min was lost and redone. Fix: every external worker starts detached (`--detach`), writes `progress.log`, and `job.mjs wait` hands the orchestrator a progress snapshot (Polish line per job) at least every 4 minutes; Codex progress is read from the plugin's own job registry. Slow workers are judged on their diff (`over_budget`, `stalled`) and resumed, not restarted. Budget 25/10 min, hard kill 2×.
+- Cause 2: the split was only visible inside the NEXT `assign` output. Fix: `run.mjs plan` prints the whole table at once (`.show`), also for one package, and SKILL.md requires it as its own message.
+- Cause 3 (time): a spec round for every "complex" request, a runner and a review per task. Fix: triage `spec_needed` (concrete requests skip the spec round), one runner pass per wave, batched low/med-risk reviews, next-wave items start when their own dependencies are verified.
+
 ## 2026-11-01: role labels and per-task reporting
 - Agents in the tables and in the UI are labelled by role (`🔨 Implementer`, `🧭 Planner`, `🧐 Reviewer`, `🛡️ Security Reviewer`, `✍️ Prompt Creator`, `🐘 Design Author`, `🐟 Goldfish Reviewer` ...; repeats `Implementer 2`) instead of invented first names.
 - Why the user did not see the split and the per-task reports: (1) the full plan was never shown, only one wave table at a time, and inline items had no row at all; (2) the silence policy allowed turns without text and the status table only reached the user inside the NEXT `assign`, so the last tasks of a run (and every task of a single wave) never got a report before the final one.

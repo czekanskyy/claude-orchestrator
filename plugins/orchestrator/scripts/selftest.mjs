@@ -667,7 +667,8 @@ function renderScenario() {
   check('render', 'run.mjs plan builds waves into the ledger', plan.added >= 3 && plan.waves >= 2, JSON.stringify(plan));
   const w1 = JSON.parse(run('assign', '--run', init.dir, '--json').stdout);
   check('render', 'assign shows the first wave, marks it in progress, gives role-label descriptions', w1.wave === 1 && /^\S+ \S+: T1/.test(w1.dispatch[0].description) && w1.dispatch[0].via && w1.show.includes('| Agent |'), JSON.stringify(w1.dispatch[0]));
-  check('render', 'the first assign of a multi-wave plan shows the WHOLE breakdown (every fragment, later waves pending)', w1.show.includes('| Wave | Task | Agent |') && w1.show.split('\n').filter((l) => /^\| \d+ \|/.test(l)).length === plan.added && w1.show.includes('⏳') && w1.show.includes('🔄'), w1.show);
+  check('render', 'plan.show carries the WHOLE breakdown (every fragment, later waves pending)', plan.show.includes('| Wave | Task | Agent |') && plan.show.split('\n').filter((l) => /^\| \d+ \|/.test(l)).length === plan.added && plan.show.includes('⏳'), plan.show);
+  check('render', 'after plan, assign shows only the wave\'s assignment table (the breakdown is not repeated)', w1.show.includes('| Agent |') && !w1.show.includes('| Wave | Task | Agent |'), w1.show);
   const fin = run('finish', '--run', init.dir, 'T1', '--status', 'done', '--report', '- Dodano endpoint\n- Testy: 3/3');
   check('render', 'finish prints the report block of that fragment and records the status', fin.status === 0 && /^### ✅ T1 · /.test(fin.stdout) && /1\/\d+ zadań gotowych/.test(fin.stdout) && /- Testy: 3\/3/.test(fin.stdout), fin.stdout + fin.stderr);
   check('render', 'assign does not hand out the same rows twice', run('assign', '--run', init.dir, '--wave', '1').status !== 0);
@@ -933,6 +934,41 @@ async function initScenario() {
 
 // autonomous mode: its own file (engine on temp repos, simulated clock, fake workers and usage feeds)
 const autoScenarioRun = async () => (await import('./selftest-auto.mjs')).autoScenario({ check, TMP, HERE, common, log });
+
+// ---------------------------------------------------------------- detached jobs: start, progress, wait, cancel (mock agy)
+async function jobsScenario() {
+  log('\n=== DETACHED JOBS (mock agy) ===');
+  const S = 'jobs';
+  const { model, effort, pool } = geminiPick();
+  const base = ['--model', model, '--effort', effort, '--mode', 'research', '--prompt-file', brief, '--cwd', TMP, '--task-type', 'research', '--allow-unverified', '--detach'];
+  const jobScript = path.join(HERE, 'job.mjs');
+  const slow = (ms) => ({ MOCK_AGY_MODE: 'slow', MOCK_AGY_SLOW_MS: String(ms) });
+
+  const early = runAdapter('run-gemini.mjs', [...base.filter((x) => x !== '--allow-unverified'), '--model', 'no-such-model'], slow(1000));
+  check(S, 'an invalid job fails at once with its real error, not a "started" stub', early.ok === false && early.error_kind === 'unknown_model', early.error_kind);
+
+  const started = runAdapter('run-gemini.mjs', base, slow(7000));
+  check(S, '--detach returns immediately with a run id and a progress file', started.ok && started.status === 'started' && !!started.run_id && !!started.progress_file, JSON.stringify(started).slice(0, 160));
+  const snap = runNode(jobScript, ['status', '--run-id', started.run_id]).json?.jobs?.[0];
+  check(S, 'status shows the job running with elapsed time and a budget', snap?.state === 'running' && snap.elapsed_s >= 0 && snap.budget_s > 0, JSON.stringify(snap).slice(0, 160));
+  const waited = runNode(jobScript, ['wait', '--run-id', started.run_id, '--max-wait-s', '40'], {}, TMP).json;
+  const done = waited?.jobs?.[0];
+  check(S, 'wait returns the adapter result once the job finishes', done?.state === 'done' && done.result?.ok === true && /MOCK/.test(done.result.text || ''), JSON.stringify(done).slice(0, 200));
+  check(S, 'progress.log records start and exit', /start .*exit 0/s.test(fs.readFileSync(started.progress_file, 'utf8')));
+
+  const quick = runNode(jobScript, ['wait', '--run-id', 'does-not-exist', '--max-wait-s', '1']).json?.jobs?.[0];
+  check(S, 'an unknown run id is reported, not a crash', quick?.state === 'unknown', quick?.state);
+
+  const long = runAdapter('run-gemini.mjs', base, slow(60000));
+  const t0 = Date.now();
+  const partial = runNode(jobScript, ['wait', '--run-id', long.run_id, '--max-wait-s', '2']).json;
+  check(S, 'wait gives up after max-wait-s and still reports a running job (pending 1)', partial?.jobs?.[0]?.state === 'running' && partial.pending === 1 && Date.now() - t0 < 15000, JSON.stringify(partial).slice(0, 160));
+  const cancelled = runNode(jobScript, ['cancel', '--run-id', long.run_id]).json;
+  const after = runNode(jobScript, ['status', '--run-id', long.run_id]).json?.jobs?.[0];
+  check(S, 'cancel stops the worker and records error_kind cancelled', cancelled?.jobs?.[0]?.cancelled === true && after?.state === 'failed' && after.result?.error_kind === 'cancelled', JSON.stringify(after).slice(0, 160));
+  common.clearCooldown(pool);
+}
+
 const egmScenarioRun = () => egmTests.egmScenario({ check, TMP, HERE, common, log });
 
 // release hygiene: the scanner finds what it should, the repo is clean, manifests agree, the public files exist
@@ -969,7 +1005,7 @@ async function release() {
   const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
   check(S, 'the README covers install, init, auto, privacy, EGM, update and troubleshooting', ['## Install on a new machine', '/orchestrator:init', '/orchestrator:auto', '## Privacy model', '## EGM mode', '## Updating', '## Troubleshooting'].every((s) => readme.includes(s)));
 }
-const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, 'gemini-limits': geminiLimits, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario, init: initScenario, egm: egmScenarioRun, release, auto: autoScenarioRun };
+const runs = { dryrun, fallback, escalate, 'update-detect': updateDetect, resume, overlay, accounts, gemini, jobs: jobsScenario, 'gemini-limits': geminiLimits, privacy, config, doctor: doctorOffline, update, migrate, guard, triage: triageScenario, flow: flowScenario, render: renderScenario, init: initScenario, egm: egmScenarioRun, release, auto: autoScenarioRun };
 for (const [name, fn] of Object.entries(runs)) if (which === 'all' || which === name) await fn();
 
 log('\n=== RESULTS ===');

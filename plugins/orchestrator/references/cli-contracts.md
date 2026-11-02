@@ -11,7 +11,10 @@ State (outside the plugin): `~/.claude/orchestrator/` = `config.yaml` (user choi
 | `--mode review\|research\|implement` | review/research = read-only; implement = writes limited to `--cwd` |
 | `--prompt-file <f>` | the brief (scanned for secrets → `secret_detected`) |
 | `--cwd <dir>` | repository root |
-| `--timeout <s>` | default 600 (review/research), 1200 (implement); kills the process tree |
+| `--detach` | start the worker as a detached job and return at once (`status: started`, `run_id`, `progress_file`); a validation error found in the first seconds is returned directly. The orchestrator always uses it; see `job.mjs` below |
+| `--task <label>` | free text shown in the job's progress line (agent label + task id) |
+| `--budget <s>` | soft budget, default 600 (review/research), 1500 (implement); `job.mjs` flags `over_budget` |
+| `--timeout <s>` | hard kill of the process tree, default 2× budget |
 | `--sensitivity none\|internal\|sensitive`, `--file <path>` (repeatable) | privacy gate: refused with `privacy_blocked` when the family's `sensitive_ok` is false and the task (or a listed file matching the sensitive globs) is sensitive. Pass every file the worker will see |
 | `--task-type/--complexity/--risk` | used for the `fallback_hint` calculation |
 | `--dry-run` | prints the exact command, runs nothing, logs nothing |
@@ -70,3 +73,7 @@ Wired into `~/.claude/settings.json` → `statusLine`. Saves `rate_limits` to `p
 All commands print one JSON object (`ok`, …) except `status` / `report` (Polish text). Run state: `~/.claude/orchestrator/auto/<run-id>/`.
 `auto.mjs prepare [--repo DIR]` (repo state, profile defaults, privacy, keep-awake) · `draft --answers F [--prompt-file P]` (contract.yaml + permissions.json + feasibility; refused while another run owns the repo) · `preflight --run ID [--skip-doctor]` (clean tree, worktree, one live headless probe, `doctor --live`) · `start --run ID --go --hash H` (worktree + branch `auto/<id>`, detached supervisor; nothing starts without `--go`) · `status | report [--run ID]` · `pause | continue | stop | abort | takeover [--run ID]` (control files; work offline when the supervisor is dead) · `review list | revert --id <task|decision> | done` · `merge --run ID --into BRANCH --yes` · `cleanup --run ID --yes` · `list`.
 `auto-supervisor.mjs --run DIR` is the detached guardian (restarts `--engine` children, watchdog, keep-awake); never started by hand. `auto-smoke.mjs [--keep] [--timeout-min N]` = real end-to-end smoke in a throwaway repo (spends a few headless Claude calls). Env: `ORCH_AUTO_WAIT_SCALE`, `ORCH_AUTO_INJECT` (tests only), `ORCH_CLAUDE_BIN`.
+
+
+## Detached jobs (`job.mjs`)
+`node job.mjs wait|status|cancel --run-id R [--run-id R2 ...] [--max-wait-s 240] [--lines 5]` returns `{ show, jobs[], pending }`. `show` is one Polish line per job (what runs, how long, its last action) for the user; each job has `state` (`running|done|failed|stalled|dead|unknown`), `elapsed_s`, `idle_s`, `over_budget`, `progress[]` and, once finished, `result` (the usual adapter JSON). `wait` returns as soon as any job finishes or after `--max-wait-s`. Live progress comes from `<run_dir>/progress.log`: for Codex the plugin's own job registry (`status --json`, the data behind `/codex:status`: commands run, files edited, phase), for Grok and Gemini the CLI's stderr plus elapsed/idle time. `cancel` kills the worker and, for Codex, cancels the plugin job as well, then records `error_kind: cancelled`.

@@ -68,11 +68,15 @@ export function triage(text, reg = loadRegistry()) {
   const base = reg.meta.default_sensitivity || 'internal';
   const sensitivity = pathHits.length || f.sensitive.length ? 'sensitive' : docsOnly && base !== 'sensitive' ? 'none' : base;
   const risk_hint = critical ? 'high' : cls === 'simple' ? 'low' : 'med';
+  // A spec round (prompt-creator: repo read, questions, a saved prompt) costs minutes. It pays off only when the request
+  // leaves something open; a concrete one (files named, no open questions, enough words) is briefed straight from its own text.
+  const specNeeded = cls === 'complex' && (f.ambiguity >= 1 || f.files.length === 0 || f.words < 40 || confidence === 'low');
   return {
-    class: cls, confidence, sensitivity, critical, risk_hint, reasons,
+    class: cls, confidence, sensitivity, critical, risk_hint, reasons, spec_needed: specNeeded,
     critical_paths: critHits.map((h) => h.file),
     sensitivity_why: sensitivity === 'sensitive' ? [...pathHits.map((h) => h.file), ...f.sensitive] : [],
     signals: { words: f.words, items: f.items, files: f.files.length, simple: f.simple.length, complex: f.complex.length, huge: f.huge.length, ambiguity: f.ambiguity, questions: f.questions, critical: f.critical },
+    spec_why: cls !== 'complex' ? null : specNeeded ? 'request leaves something open (no files named, open questions, too short or mixed signals)' : 'request is concrete: skip the spec round, plan from the request text',
     note: confidence === 'low' ? 'Mixed signals: decide yourself (routing.md §1).' : 'Proposal only: override when you know better.',
   };
 }

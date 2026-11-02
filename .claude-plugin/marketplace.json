@@ -1,12 +1,12 @@
 {
   "name": "czekanskyy-tools",
   "owner": { "name": "Dominik Czekański" },
-  "metadata": { "description": "Claude Code plugins by Dominik Czekański: a multi-model orchestrator with a privacy model.", "version": "3.0.0" },
+  "metadata": { "description": "Claude Code plugins by Dominik Czekański: a multi-model orchestrator with a privacy model.", "version": "3.1.0" },
   "plugins": [
     {
       "name": "orchestrator",
       "description": "Multi-model orchestrator: Claude subagents plus GPT (Codex), Grok and Gemini workers with a privacy model, cross-family review, pool tracking, per-repo profiles, unattended runs and optional EGM mode for critical tasks.",
-      "version": "3.0.0",
+      "version": "3.1.0",
       "author": { "name": "Dominik Czekański" },
       "homepage": "https://github.com/czekanskyy/claude-orchestrator",
       "license": "MIT",

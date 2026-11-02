@@ -49,7 +49,7 @@ export const spec = {
 
   // stdin is closed by runProcess (no input): required on Windows when stdout is piped.
   run(cmd, ctx) {
-    return runProcess(cmd.cmd, cmd.args, { cwd: cmd.cwd, env: cmd.env, timeoutMs: ctx.timeoutMs });
+    return runProcess(cmd.cmd, cmd.args, { cwd: cmd.cwd, env: cmd.env, timeoutMs: ctx.timeoutMs, onData: (d, kind) => kind === 'stderr' && ctx.progress?.chunk(d) });
   },
 
   parse(proc, ctx) {

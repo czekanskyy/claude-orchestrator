@@ -6,6 +6,13 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 3.1.0 (2026-11-02): detached workers and live progress
+### Changed
+- **External workers (Codex, Grok, Gemini) run as detached jobs.** The orchestrator no longer blocks on a worker for up to an hour without a word: `--detach` returns at once, `job.mjs wait` reports progress (for Codex the plugin's own job status: commands, edits, phase) every few minutes, and a slow worker is judged by its diff instead of being killed and restarted. Budget 25 min (implement) / 10 min, hard kill at twice that.
+- **The plan table is shown right after planning**, also for a single package (`run.mjs plan` prints it), instead of only inside the next wave's output.
+- **Less overhead:** triage `spec_needed` lets concrete requests skip the spec round; one verification pass per wave; low/med-risk reviews batched; the next wave starts as soon as its dependencies are verified.
+- Role labels for agents and per-task report blocks (from the unreleased 2026-11-01 work) ship in this version.
+
 ## 3.0.0 (2026-10-31): first public release
 The first tagged release. It consolidates the private development iterations (internally numbered 3.0 to 3.2) into one version.
 

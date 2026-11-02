@@ -587,7 +587,8 @@ export function killTree(child) {
 }
 
 // Runs a command with a timeout; resolves {code, stdout, stderr, timedOut, durationMs}.
-export function runProcess(cmd, args, { cwd, env, input, timeoutMs = 600000 } = {}) {
+// onData(chunk, 'stdout'|'stderr') tees live output (progress files of detached jobs); onSpawn(child) exposes the process.
+export function runProcess(cmd, args, { cwd, env, input, timeoutMs = 600000, onData, onSpawn } = {}) {
   return new Promise((resolve) => {
     const started = Date.now();
     let stdout = '';
@@ -605,8 +606,9 @@ export function runProcess(cmd, args, { cwd, env, input, timeoutMs = 600000 } = 
       return;
     }
     const timer = setTimeout(() => { timedOut = true; killTree(child); }, timeoutMs);
-    child.stdout.on('data', (d) => { stdout += d; });
-    child.stderr.on('data', (d) => { stderr += d; });
+    onSpawn?.(child);
+    child.stdout.on('data', (d) => { stdout += d; onData?.(d, 'stdout'); });
+    child.stderr.on('data', (d) => { stderr += d; onData?.(d, 'stderr'); });
     child.on('error', (e) => { stderr += `\n${e.message}`; });
     child.on('close', (code) => {
       clearTimeout(timer);

@@ -38,7 +38,7 @@ if (mode === 'denied') {
   envelope({ status: 'SUCCESS', response: 'I could not run the command.', usage });
   process.exit(0);
 }
-if (mode === 'slow') await new Promise((r) => setTimeout(r, 30000));
+if (mode === 'slow') await new Promise((r) => setTimeout(r, Number(process.env.MOCK_AGY_SLOW_MS || 30000)));
 envelope({
   status: 'SUCCESS',
   response: `MOCK OK model=${val('--model')} mode=${val('--mode')} resumed=${argv.includes('--conversation')}`,

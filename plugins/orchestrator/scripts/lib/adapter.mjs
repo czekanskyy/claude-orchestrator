@@ -9,12 +9,13 @@ import {
   parseArgs, out, RUNS_DIR,
 } from './common.mjs';
 import { fallback } from '../registry.mjs';
+import { detachAdapter, makeProgress, runDirOf } from './jobs.mjs';
 import { effectiveSensitivity, familyAllowed, scanTextForSensitivePaths } from './privacy.mjs';
 
 // True when `url` is the script node was started with (adapters export their spec and only run as a CLI).
 export const isMain = (url) => url === pathToFileURL(process.argv[1] || '').href;
 
-export const COMMON_FLAGS = ['dry-run', 'approved', 'allow-secrets', 'allow-unverified', 'json-only'];
+export const COMMON_FLAGS = ['detach', 'dry-run', 'approved', 'allow-secrets', 'allow-unverified', 'json-only'];
 const SIMULATIONS = {
   rate_limit: { code: 1, stdout: '', stderr: "You've hit your usage limit. Try again in 45 minutes." },
   rate_limit_model: { code: 1, stdout: '', stderr: 'Rate limit reached for this model (429). Try again in 20 minutes.' },
@@ -42,10 +43,22 @@ export async function runAdapter(spec, argv) {
   const runId = a['run-id'] || newRunId(spec.invoke);
   const mode = a.mode || 'review';
   const base = { ok: false, invoke: spec.invoke, run_id: runId, mode, model: a.model || null, effort: a.effort || null };
-  const finish = (res, code) => { refreshEstimatesCache(reg); out(res, code); return res; };
+  // A detached job's final answer also goes to <run_dir>/result.json, where `job.mjs wait` picks it up.
+  const finish = (res, code) => {
+    refreshEstimatesCache(reg);
+    if (a['run-id']) { try { fs.writeFileSync(path.join(ensureDir(runDirOf(runId)), 'result.json'), JSON.stringify(res, null, 2)); } catch { /* best effort */ } }
+    out(res, code);
+    return res;
+  };
 
   if (!['review', 'research', 'implement'].includes(mode)) return finish({ ...base, error_kind: 'bad_args', error: 'mode must be review|research|implement' }, 1);
   if (!a['prompt-file'] || !fs.existsSync(a['prompt-file'])) return finish({ ...base, error_kind: 'bad_args', error: '--prompt-file <existing file> is required' }, 1);
+
+  // Soft budget (reported by job.mjs as over_budget) and a hard kill at twice that, unless --timeout says otherwise.
+  const budgetS = Number(a.budget || (mode === 'implement' ? 1500 : 600));
+  if (a.detach && !a['dry-run'] && !a.simulate) {
+    return finish(await detachAdapter({ script: process.argv[1], argv, runId, meta: { invoke: spec.invoke, model: a.model || null, effort: a.effort || null, mode, task: a.task || a['task-type'] || null, budget_s: budgetS } }), 0);
+  }
 
   const m = findModel(reg, a.model);
   if (!m) {
@@ -83,9 +96,10 @@ export async function runAdapter(spec, argv) {
   if (secrets.length && !a['allow-secrets']) return finish({ ...base, error_kind: 'secret_detected', error: `brief contains possible secrets: ${secrets.join(', ')}. Remove them (never send secrets to external models).` }, 1);
 
   const cwd = path.resolve(a.cwd || process.cwd());
-  const timeoutMs = Number(a.timeout || (mode === 'implement' ? 1200 : 600)) * 1000;
+  const timeoutMs = Number(a.timeout || budgetS * 2) * 1000;
   const runDir = ensureDir(path.join(RUNS_DIR, runId));
-  const ctx = { a, reg, model: m, effort, mode, cwd, prompt, promptFile: path.resolve(a['prompt-file']), timeoutMs, runId, runDir };
+  const progress = makeProgress(runDir);
+  const ctx = { a, reg, model: m, effort, mode, cwd, prompt, promptFile: path.resolve(a['prompt-file']), timeoutMs, runId, runDir, progress };
   base.run_dir = runDir;
 
   let cmd;
@@ -101,7 +115,9 @@ export async function runAdapter(spec, argv) {
   if (a.simulate) {
     proc = { durationMs: 5, timedOut: false, ...(SIMULATIONS[a.simulate] || { code: 0, stdout: spec.simulateOk?.(ctx) || 'OK', stderr: '' }) };
   } else {
+    progress.line(`start ${m.id} ${effort} ${mode} (${cmd.engine})`);
     proc = await spec.run(cmd, ctx);
+    progress.line(proc.timedOut ? `hard timeout after ${Math.round(proc.durationMs / 1000)}s` : `exit ${proc.code} after ${Math.round(proc.durationMs / 1000)}s`);
   }
   fs.writeFileSync(path.join(runDir, 'stdout.txt'), proc.stdout || '');
   fs.writeFileSync(path.join(runDir, 'stderr.txt'), proc.stderr || '');
