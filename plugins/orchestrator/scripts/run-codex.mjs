@@ -6,6 +6,7 @@
 //          [--review-diff [--scope auto|working-tree|branch] [--base REF]] [--resume-of RUN_ID]
 //          [--dry-run] [--simulate KIND]
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { runAdapter, lastRunIn, isMain } from './lib/adapter.mjs';
@@ -89,8 +90,19 @@ export const spec = {
     return { engine: 'exec', cmd: codex, args, cwd, env, input: fs.readFileSync(promptFile, 'utf8'), warnings, display: `codex ${args.join(' ')} < ${promptFile}` };
   },
 
-  run(cmd, ctx) {
-    return runProcess(cmd.cmd, cmd.args, { cwd: cmd.cwd, env: cmd.env, input: cmd.input, timeoutMs: ctx.timeoutMs });
+  // `task --json` prints nothing until the very end, so a second loop asks the plugin's own job registry
+  // (`status --json`, the same data as /codex:status) what Codex is doing and appends changes to progress.log.
+  async run(cmd, ctx) {
+    const plugin = String(cmd.engine || '').startsWith('plugin') ? companionPath() : null;
+    let stop = false;
+    const poller = plugin ? pollCompanion(plugin.path, cmd, ctx, () => stop) : null;
+    const tee = plugin ? undefined : (d) => ctx.progress?.chunk(d);
+    try {
+      return await runProcess(cmd.cmd, cmd.args, { cwd: cmd.cwd, env: cmd.env, input: cmd.input, timeoutMs: ctx.timeoutMs, onData: tee });
+    } finally {
+      stop = true;
+      await poller;
+    }
   },
 
   parse(proc, ctx) {
@@ -121,6 +133,42 @@ export const spec = {
 
   simulateOk: (ctx) => JSON.stringify({ status: 0, threadId: 'sim-thread', rawOutput: `SIMULATED ${ctx.model.id}/${ctx.effort}: OK`, touchedFiles: [] }),
 };
+
+// Poll the companion every few seconds: the job started by this run is the newest running task in the workspace.
+async function pollCompanion(script, cmd, ctx, stopped, everyMs = 5000) {
+  const seen = new Set();
+  let jobId = null;
+  // The companion titles a task with the first 72 chars of its prompt: that identifies our job among parallel ones;
+  // an exclusive claim file settles the case of two briefs that open with the same text.
+  const head = fs.readFileSync(ctx.promptFile, 'utf8').trim().replace(/\s+/g, ' ');
+  const claimDir = path.join(path.dirname(ctx.runDir), '.codex-claims');
+  const ours = (j) => {
+    const sum = String(j.summary || '').replace(/\.\.\.$/, '');
+    if (!head.startsWith(sum)) return false;
+    try { fs.mkdirSync(claimDir, { recursive: true }); fs.writeFileSync(path.join(claimDir, j.id), ctx.runId, { flag: 'wx' }); return true; } catch { return fs.existsSync(path.join(claimDir, j.id)) && fs.readFileSync(path.join(claimDir, j.id), 'utf8') === ctx.runId; }
+  };
+  while (!stopped()) {
+    const r = spawnSync(process.execPath, [script, 'status', '--json', '--cwd', cmd.cwd], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
+    try {
+      const snap = JSON.parse(r.stdout);
+      const job = jobId ? (snap.running || []).find((j) => j.id === jobId) : (snap.running || []).find((j) => ours(j));
+      if (job) {
+        if (job.id !== jobId) {
+          jobId = job.id;
+          fs.writeFileSync(path.join(ctx.runDir, 'cancel.json'), JSON.stringify({ script, job_id: jobId, cwd: cmd.cwd }));
+          ctx.progress.line(`codex job ${jobId}`);
+        }
+        const phase = job.phase ? `[${job.phase}${job.elapsed ? ` ${job.elapsed}` : ''}]` : '';
+        for (const l of job.progressPreview || []) {
+          if (seen.has(l)) continue;
+          seen.add(l);
+          ctx.progress.line(`${phase} ${l}`);
+        }
+      }
+    } catch (e) { if (process.env.ORCH_DEBUG) ctx.progress.line(`poll error: ${e.message} ${String(r.stderr).slice(0, 120)}`); }
+    for (let i = 0; i < everyMs / 250 && !stopped(); i++) await new Promise((res) => setTimeout(res, 250));
+  }
+}
 
 function parseExecJsonl(proc, ctx) {
   let text = '';

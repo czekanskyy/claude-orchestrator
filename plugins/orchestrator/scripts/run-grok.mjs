@@ -54,7 +54,7 @@ export const spec = {
   },
 
   run(cmd, ctx) {
-    return runProcess(cmd.cmd, cmd.args, { cwd: cmd.cwd, env: cmd.env, timeoutMs: ctx.timeoutMs });
+    return runProcess(cmd.cmd, cmd.args, { cwd: cmd.cwd, env: cmd.env, timeoutMs: ctx.timeoutMs, onData: (d, kind) => kind === 'stderr' && ctx.progress?.chunk(d) });
   },
 
   parse(proc, ctx) {

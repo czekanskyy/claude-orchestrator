@@ -10,9 +10,9 @@ import { addRoute, assignmentTable, breakdownTable, taskReport, statusTable, ren
 
 const USAGE = `run.mjs <command>
   init [--slug S] [--repo DIR]                       create runs/<ts>-run-<slug>/ with ledger.json (pool + git baseline)
-  plan --run DIR --route route.json                  add routed assignments to the ledger (waves, agent labels; inline items too)
+  plan --run DIR --route route.json                  add routed assignments to the ledger; prints .show = the whole split (wave, task, agent, model · effort, status) for the user
   add --run DIR --id I --stage S --role R --model M --effort E --title T [--wave N]   a row not produced by the router
-  assign --run DIR [--wave N] [--json]               first wave of a multi-wave plan: the whole breakdown; later: status so far + assignment table of the next pending wave; marks it 🔄
+  assign --run DIR [--wave N] [--json]               status so far (when something finished) + assignment table of the next pending wave; marks it 🔄
   breakdown --run DIR                                the whole split: wave, task, agent, model · effort, status
   finish --run DIR <id> [--status done|failed|attention] [--report TEXT] [--note TEXT]   set the status and print the report block of that one fragment (Polish, ≤ 5 lines)
   set --run DIR <id> --status done|progress|pending|attention|failed [--note TEXT]
@@ -65,8 +65,9 @@ async function main(argv) {
       const l = need();
       const before = l.rows.length;
       addRoute(l, JSON.parse(fs.readFileSync(a.route, 'utf8')), loadRegistry());
+      l.breakdown_shown = true; // `show` below is the user-facing split; assign will not repeat it
       save(a.run, l);
-      return out({ added: l.rows.length - before, waves: Math.max(0, ...l.rows.map((r) => r.wave)) });
+      return out({ added: l.rows.length - before, waves: Math.max(0, ...l.rows.map((r) => r.wave)), show: breakdownTable(l.rows) });
     }
     case 'add': {
       const l = need();
@@ -82,7 +83,7 @@ async function main(argv) {
       const rows = l.rows.filter((r) => r.wave === wave && r.status === 'pending');
       if (!rows.length) return fail('no pending rows in that wave');
       const status = l.rows.some((r) => r.status !== 'pending') ? statusTable(l.rows) : null; // progress so far, shown before the next wave
-      const first = !status && new Set(l.rows.map((r) => r.wave)).size > 1; // first wave of a multi-wave plan: show the whole split
+      const first = !status && !l.breakdown_shown && new Set(l.rows.map((r) => r.wave)).size > 1; // plan not announced yet: show the whole split
       for (const r of rows) r.status = 'progress';
       save(a.run, l);
       const table = first ? breakdownTable(l.rows) : assignmentTable(rows);
